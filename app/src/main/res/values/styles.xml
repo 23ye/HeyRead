@@ -1,0 +1,8 @@
+<resources>
+    <style name="HeyReadLaunchTheme" parent="android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@color/launch_neutral</item>
+        <item name="android:statusBarColor">@color/launch_neutral</item>
+        <item name="android:navigationBarColor">@color/launch_neutral</item>
+        <item name="android:windowLightStatusBar">true</item>
+    </style>
+</resources>
