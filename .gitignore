@@ -87,3 +87,6 @@ __pycache__/
 .env.*
 key.properties
 keystore.properties
+
+# Local output from the release packaging helper.
+/artifacts/

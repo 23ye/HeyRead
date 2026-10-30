@@ -95,6 +95,31 @@ Debug APK 输出到 `app/build/outputs/apk/debug/app-debug.apk`，应用包名�
 
 Release 构建使用 `assembleRelease`，已启用 R8 和资源压缩；公开分发前需自行配置签名。仓库不包含个人签名密钥或本机打包助手，不能直接复现维护者本机的签名流程。已发布安装包以仓库 Releases 页面实际提供的内容为准。
 
+### GitHub 自动打包
+
+仓库提供 `.github/workflows/android-release.yml`：修改 `main` 中的应用源码、构建配置、脚本或工作流后自动运行；推送 `v*` 标签也会运行。也可以在 **Actions → Android release build → Run workflow** 手动构建。
+
+工作流使用 Java 21、Android SDK 35 与项目 Gradle Wrapper，先校验并准备翻译归属素材，再编译启用 R8／资源压缩的 Release。成功后在该次运行的 **Artifacts** 中下载 `heyread-release-…`，其中包含 APK、`SHA256SUMS.txt` 和 `build-info.json`；R8 mapping 单独保存，产物保留14天。工作流不自动发布 GitHub Releases。
+
+要生成**可以安装的已签名 APK**，请在仓库 **Settings → Secrets and variables → Actions → New repository secret** 中配置：
+
+| Secret 名称 | 内容 |
+| --- | --- |
+| `RELEASE_KEYSTORE_BASE64` | 固定发行 keystore 文件的 Base64 文本 |
+| `RELEASE_STORE_PASSWORD` | keystore 密码 |
+| `RELEASE_KEY_ALIAS` | 密钥别名 |
+| `RELEASE_KEY_PASSWORD` | 该密钥的密码 |
+
+可在自己的 PowerShell 中将 keystore 转成 Base64 并复制到剪贴板，然后粘贴到对应 Secret；路径替换为你自己的文件：
+
+```powershell
+[Convert]::ToBase64String([IO.File]::ReadAllBytes('C:\你的密钥目录\release.jks')) | Set-Clipboard
+```
+
+四项全部未配置时，工作流仍可验证 Release 构建，输出带 `unsigned` 标记的**未签名 APK，不能直接安装**；只配置部分项目、密码错误或签名失败会让任务失败，不会静默生成替代安装包。签名密钥和密码不写入仓库或下载产物，临时 keystore 在打包结束时清理。
+
+覆盖升级已安装应用需要使用相同签名证书，并设置合适的新 `versionCode`。请持续使用同一发行密钥并自行妥善备份；工作流不会每次生成随机证书。
+
 测试代码位于 `app/src/test/` 与 `app/src/androidTest/`。仓库不含测试图片、音频和视频，依赖这些资源的媒体仪器用例需另外准备；这不影响按上述步骤构建普通 Debug 应用。
 
 ## 数据与隐私
