@@ -48,6 +48,9 @@ import cn.heyread.app.data.account.ReplyTarget
 import cn.heyread.app.data.account.SharedArticleContentParser
 import cn.heyread.app.data.local.SearchHistoryEntry
 import cn.heyread.app.data.media.MediaImage
+import cn.heyread.app.data.media.collectCommentImageOccurrences
+import cn.heyread.app.data.media.commentImageOccurrenceIndex
+import cn.heyread.app.data.media.toMediaImage
 import cn.heyread.app.data.model.*
 import cn.heyread.app.data.translation.SteamTranslationPolicy
 import cn.heyread.app.ui.components.AnimatedImage
@@ -113,6 +116,11 @@ import cn.heyread.app.viewmodel.shouldShowInitialDetailSkeleton
 import coil.compose.AsyncImagePainter
 import coil.request.ImageRequest
 import kotlinx.coroutines.launch
+
+private enum class MediaPreviewSource {
+  BODY,
+  COMMENT,
+}
 
 @Composable
 @OptIn(ExperimentalMaterial3Api::class)
@@ -1678,6 +1686,7 @@ fun DetailScreen(
   var activeMedia by remember(key) { mutableStateOf<MediaImage?>(null) }
   var activeMediaGallery by remember(key) { mutableStateOf<List<MediaImage>?>(null) }
   var activeMediaInitialIndex by remember(key) { mutableIntStateOf(0) }
+  var activeMediaSource by remember(key) { mutableStateOf<MediaPreviewSource?>(null) }
   var activeVideoUrl by remember(key) { mutableStateOf<String?>(null) }
   var observedAccountRevision by remember(key) { mutableLongStateOf(account.revision) }
   var mediaAccountIdentity by
@@ -1701,6 +1710,7 @@ fun DetailScreen(
       activeMedia = null
       activeMediaGallery = null
       activeMediaInitialIndex = 0
+      activeMediaSource = null
     }
     mediaAccountIdentity = currentIdentity
   }
@@ -1768,6 +1778,13 @@ fun DetailScreen(
     LocalSharedCoverCoordinator.current,
   )
   val displayBlocks = accountBlocks?.takeIf { it.isNotEmpty() } ?: s.detailBlocks.orEmpty()
+  val commentImageOccurrences =
+    remember(article?.comments, account.replies, ui.noImages) {
+      if (ui.noImages) emptyList()
+      else collectCommentImageOccurrences(article?.comments.orEmpty(), account.replies)
+    }
+  val commentImageGallery =
+    remember(commentImageOccurrences) { commentImageOccurrences.map { it.toMediaImage() } }
   val bodyImageOccurrences = remember(displayBlocks) { articleImageOccurrences(displayBlocks) }
   val articleImageGallery =
     remember(bodyImageOccurrences) { bodyImageOccurrences.map { it.block.toMediaImage() } }
@@ -1779,15 +1796,21 @@ fun DetailScreen(
     account.session?.userId,
     account.revision,
     key,
+    activeMediaSource,
   ) {
     if (ui.noImages || (!bodyPageActive && !commentsPageActive)) {
       activeMedia = null
       activeMediaGallery = null
       activeMediaInitialIndex = 0
-    } else if (!bodyPageActive) {
-      if (activeMediaGallery != null) activeMedia = null
+      activeMediaSource = null
+    } else if (
+      (activeMediaSource == MediaPreviewSource.BODY && !bodyPageActive) ||
+        (activeMediaSource == MediaPreviewSource.COMMENT && !commentsPageActive)
+    ) {
+      activeMedia = null
       activeMediaGallery = null
       activeMediaInitialIndex = 0
+      activeMediaSource = null
     }
   }
   val presentationMetadata =
@@ -1940,6 +1963,7 @@ fun DetailScreen(
                           MediaImage(coverUrl, description = "文章封面", animationUrl = coverUrl)
                         activeMediaGallery = null
                         activeMediaInitialIndex = 0
+                        activeMediaSource = MediaPreviewSource.BODY
                       }
                     else Modifier
                   )
@@ -2174,12 +2198,14 @@ fun DetailScreen(
                       activeMedia = it
                       activeMediaGallery = null
                       activeMediaInitialIndex = 0
+                      activeMediaSource = MediaPreviewSource.BODY
                     },
                     imageOccurrenceStart = articleImageOffsets.getOrElse(index) { 0 },
                     onOpenImageOccurrence = { occurrenceIndex, image ->
                       activeMedia = image
                       activeMediaGallery = articleImageGallery
                       activeMediaInitialIndex = occurrenceIndex
+                      activeMediaSource = MediaPreviewSource.BODY
                     },
                     gameState = gameState,
                     onOpenGame = articleGameViewModel::openGameTopic,
@@ -2220,6 +2246,7 @@ fun DetailScreen(
                             activeMedia = it
                             activeMediaGallery = null
                             activeMediaInitialIndex = 0
+                            activeMediaSource = MediaPreviewSource.BODY
                           },
                           gameState = gameState,
                           onOpenGame = articleGameViewModel::openGameTopic,
@@ -2365,22 +2392,21 @@ fun DetailScreen(
                   authorUserId = profile?.userId,
                   onProfileClick = onOpenProfile,
                   onSupport = { target -> commentActionsViewModel.support(target, s) },
-                  onImageClick = { image ->
+                  onImageGalleryClick = { targetComment, imageIndex ->
                     if (!ui.noImages) {
-                      activeMedia =
-                        MediaImage(
-                          previewUrl = image.thumbnailUrl ?: image.url,
-                          originalUrl =
-                            image.originalUrl
-                              ?: image.url.takeIf {
-                                image.thumbnailUrl != null && image.thumbnailUrl != image.url
-                              },
-                          animationUrl =
-                            if (image.animated) image.originalUrl ?: image.url else null,
-                          description = "评论图片",
+                      val occurrenceIndex =
+                        commentImageOccurrenceIndex(
+                          commentImageOccurrences,
+                          comment.id,
+                          targetComment.id,
+                          imageIndex,
                         )
-                      activeMediaGallery = null
-                      activeMediaInitialIndex = 0
+                      commentImageOccurrences.getOrNull(occurrenceIndex)?.let { occurrence ->
+                        activeMedia = occurrence.toMediaImage()
+                        activeMediaGallery = commentImageGallery.toList()
+                        activeMediaInitialIndex = occurrenceIndex
+                        activeMediaSource = MediaPreviewSource.COMMENT
+                      }
                     }
                   },
                   onReply = { targetComment, nested ->
@@ -2459,7 +2485,11 @@ fun DetailScreen(
   }
   val currentMediaIdentity = account.session?.userId to account.revision
   val mediaPreviewPageActive =
-    (bodyPageActive || commentsPageActive) && (activeMediaGallery == null || bodyPageActive)
+    when (activeMediaSource) {
+      MediaPreviewSource.BODY -> bodyPageActive
+      MediaPreviewSource.COMMENT -> commentsPageActive
+      null -> false
+    }
   if (!ui.noImages && mediaAccountIdentity == currentMediaIdentity && mediaPreviewPageActive)
     activeMedia?.let { image ->
       MediaPreviewDialog(
@@ -2470,6 +2500,7 @@ fun DetailScreen(
           activeMedia = null
           activeMediaGallery = null
           activeMediaInitialIndex = 0
+          activeMediaSource = null
         },
       )
     }

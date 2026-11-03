@@ -36,6 +36,7 @@ fun CommentThreadCard(
     onImageClick: (CommentImage) -> Unit = {},
     authorUserId: String? = null,
     onProfileClick: ((cn.heyread.app.data.model.AuthorProfile) -> Unit)? = null,
+    onImageGalleryClick: ((RemoteComment, Int) -> Unit)? = null,
 ) {
     Column(Modifier.fillMaxWidth().padding(vertical = 9.dp)) {
         CommentEntry(
@@ -47,6 +48,7 @@ fun CommentThreadCard(
             onSupport = { onSupport(comment) },
             onImageClick = onImageClick,
             onProfileClick = onProfileClick,
+            onImageGalleryClick = onImageGalleryClick,
         )
         if (comment.childCount > 0 || replies.isNotEmpty() || replyLoading || replyError != null) {
             Surface(
@@ -66,6 +68,7 @@ fun CommentThreadCard(
                             onSupport = { onSupport(reply) },
                             onImageClick = onImageClick,
                             onProfileClick = onProfileClick,
+                            onImageGalleryClick = onImageGalleryClick,
                         )
                     }
                     if (replyError != null) {
@@ -107,6 +110,7 @@ private fun CommentEntry(
     onSupport: () -> Unit,
     onImageClick: (CommentImage) -> Unit,
     onProfileClick: ((cn.heyread.app.data.model.AuthorProfile) -> Unit)?,
+    onImageGalleryClick: ((RemoteComment, Int) -> Unit)?,
 ) {
     Column(Modifier.fillMaxWidth().padding(vertical = 5.dp)) {
         ProfileRow(
@@ -187,7 +191,8 @@ private fun CommentEntry(
                             noImages,
                             "comment-image-${comment.id}-$index",
                         ) {
-                            onImageClick(image)
+                            if (onImageGalleryClick != null) onImageGalleryClick(comment, index)
+                            else onImageClick(image)
                         }
                     }
                 }
