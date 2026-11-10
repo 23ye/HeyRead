@@ -3,7 +3,7 @@ plugins { id("com.android.application"); id("org.jetbrains.kotlin.android"); id(
 android {
     namespace = "cn.heyread.app"
     compileSdk = 35
-    defaultConfig { applicationId = "cn.heyread.app"; minSdk = 26; targetSdk = 35; versionCode = 51; versionName = "1.33"; testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner" }
+    defaultConfig { applicationId = "cn.heyread.app"; minSdk = 26; targetSdk = 35; versionCode = 52; versionName = "1.34"; testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner" }
     buildTypes { release { isMinifyEnabled = true; isShrinkResources = true; proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro") } }
     packaging { jniLibs { useLegacyPackaging = true } }
     compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }

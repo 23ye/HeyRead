@@ -42,6 +42,35 @@ class NestedArticleContentTest {
   }
 
   @Test
+  fun inlineUserMentionsInMixedProseBecomeReadableTextWithoutParsingSurroundingMarkup() {
+    val firstMention =
+      "<a data-user-id=\"16060506\" href=\"https://api.xiaoheihe.cn/open_inapp/#heybox://%7B%22protocol_type%22%3A%22openUser%22%2C%22user_id%22%3A%2216060506%22%7D\" target=\"_blank\">@ESL官方账号</a>"
+    val secondMention = "<a data-user-id='12'>@队员朋友</a>"
+    val raw =
+      "后续：ESL 官方运营账号已回复，$firstMention\n再次感谢盒友 [cube_哭泣] $secondMention"
+
+    assertEquals(
+      listOf(ArticleBlock.Paragraph("后续：ESL 官方运营账号已回复，@ESL官方账号\n再次感谢盒友 [cube_哭泣] @队员朋友")),
+      repository.parseArticleBlocks(
+        JSONArray().put(JSONObject().put("type", "text").put("text", raw))),
+    )
+  }
+
+  @Test
+  fun invalidOrIncompleteMentionsAndUnrelatedInlineMarkupRemainLiteral() {
+    val invalidId = "<a data-user-id=\"0\">@无效ID</a>"
+    val missingId = "<a href=\"https://example.test\">@没有ID</a>"
+    val incomplete = "<a data-user-id=\"7\">@未完成"
+    val raw = "代码 <strong>仍按字面保留</strong> $invalidId $missingId $incomplete"
+
+    assertEquals(listOf(ArticleBlock.Paragraph(raw)), repository.decodeTextPayload(raw))
+    assertEquals(
+      listOf(ArticleBlock.Paragraph("文本 &amp; <strong>格式</strong>")),
+      repository.decodeTextPayload("文本 &amp; <strong>格式</strong>"),
+    )
+  }
+
+  @Test
   fun contentWrapperAndBoundsAreHandledWithoutRenderingUnknownObjects() {
     val wrapped =
         """{"content":[{"type":"text","text":"可读"},{"type":"event_entry","path":"/private"}]}"""

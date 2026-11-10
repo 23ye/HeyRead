@@ -27,6 +27,11 @@ import org.json.JSONObject
 private const val MAX_QUOTE_DEPTH = 4
 private const val MAX_CONTENT_JSON_DEPTH = 6
 private const val MAX_CONTENT_JSON_NODES = 512
+private val INLINE_USER_MENTION =
+  Regex(
+    """<a\b[^<>]{0,2048}>([^<>]{1,256})</a\s*>""",
+    setOf(RegexOption.IGNORE_CASE),
+  )
 private val RECOGNIZED_BLOCK_TYPES =
   setOf(
     "text",
@@ -1091,7 +1096,32 @@ class AccountRepository(
       }
     }
     if (HTML_START.containsMatchIn(candidate)) return htmlBlocks(normalized)
-    return if (normalized.isBlank()) emptyList() else listOf(ArticleBlock.Paragraph(normalized))
+    val readableText = replaceInlineUserMentions(normalized)
+    return if (readableText.isBlank()) emptyList() else listOf(ArticleBlock.Paragraph(readableText))
+  }
+
+  private fun replaceInlineUserMentions(text: String): String {
+    if (!text.contains("data-user-id", ignoreCase = true)) return text
+    return INLINE_USER_MENTION.replace(text) { match ->
+      val document = org.jsoup.Jsoup.parseBodyFragment(match.value)
+      val anchor = document.body().childNodes().singleOrNull() as? org.jsoup.nodes.Element
+      val userId =
+        anchor
+          ?.attr("data-user-id")
+          ?.takeIf { it.matches(Regex("[1-9][0-9]{0,18}")) }
+          ?.toLongOrNull()
+      val label =
+        (anchor?.childNodes()?.singleOrNull() as? org.jsoup.nodes.TextNode)?.wholeText
+      if (
+        anchor != null &&
+          anchor.tagName().equals("a", ignoreCase = true) &&
+          userId != null &&
+          userId > 0 &&
+          label != null &&
+          label.startsWith("@") &&
+          label.drop(1).isNotBlank()
+      ) label else match.value
+    }
   }
 
   private fun decodeStructuredContent(

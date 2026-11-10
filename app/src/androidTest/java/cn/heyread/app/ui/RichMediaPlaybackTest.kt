@@ -11,8 +11,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithContentDescription
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.unit.dp
@@ -22,14 +26,27 @@ import androidx.lifecycle.LifecycleRegistry
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import coil.ImageLoader
+import coil.compose.LocalImageLoader
+import coil.decode.DataSource
+import coil.fetch.DrawableResult
+import coil.fetch.FetchResult
+import coil.fetch.Fetcher
+import coil.request.Options
+import cn.heyread.app.data.account.AccountRepository
 import cn.heyread.app.data.account.CommentImage
 import cn.heyread.app.data.media.MediaImage
+import cn.heyread.app.data.model.ArticleBlock
+import cn.heyread.app.data.rich.OfficialEmojiCatalog
 import cn.heyread.app.ui.components.AnimatedImage
 import cn.heyread.app.ui.components.CommentImageThumbnail
 import cn.heyread.app.ui.components.MediaImageThumbnail
 import cn.heyread.app.ui.components.MediaPreviewDialog
+import cn.heyread.app.ui.components.RichText
+import cn.heyread.app.ui.screens.ArticleBlockContent
 import cn.heyread.app.ui.theme.HeyReadTheme
 import java.io.File
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -39,6 +56,107 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class RichMediaPlaybackTest {
     @get:Rule val compose = createComposeRule()
+
+    @Test
+    fun bundledCubeEmojisRenderFromTheirExactOfficialImageModels() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        OfficialEmojiCatalog.loadBundled(context)
+        val expectedModels =
+            linkedMapOf(
+                "[cube_抱拳]" to "https://imgheybox.max-c.com/heybox/emoji/cube_191.png",
+                "[cube_预言]" to "https://imgheybox.max-c.com/heybox/emoji/cube_192.png",
+            )
+        assertEquals(
+            expectedModels,
+            expectedModels.mapValues { (token, _) -> OfficialEmojiCatalog.entries.value[token] },
+        )
+
+        val requestedUrls = java.util.Collections.synchronizedList(mutableListOf<String>())
+        val imageLoader =
+            ImageLoader.Builder(context)
+                .components {
+                    add(
+                        object : Fetcher.Factory<Uri> {
+                            override fun create(
+                                data: Uri,
+                                options: Options,
+                                imageLoader: ImageLoader,
+                            ): Fetcher? =
+                                if (data.scheme == "https")
+                                    object : Fetcher {
+                                        override suspend fun fetch(): FetchResult {
+                                            val url = data.toString()
+                                            requestedUrls.add(url)
+                                            check(url in expectedModels.values)
+                                            val bitmap =
+                                                Bitmap.createBitmap(32, 32, Bitmap.Config.ARGB_8888)
+                                                    .apply { eraseColor(android.graphics.Color.CYAN) }
+                                            return DrawableResult(
+                                                android.graphics.drawable.BitmapDrawable(
+                                                    context.resources,
+                                                    bitmap,
+                                                ),
+                                                false,
+                                                DataSource.MEMORY,
+                                            )
+                                        }
+                                    }
+                                else null
+                        }
+                    )
+                }
+                .build()
+
+        compose.setContent {
+            CompositionLocalProvider(LocalImageLoader provides imageLoader) {
+                HeyReadTheme("light", motionEnabled = false) {
+                    RichText("[cube_抱拳] 正文 [cube_预言]")
+                }
+            }
+        }
+
+        compose.waitUntil(10_000) {
+            expectedModels.keys.all { token ->
+                compose
+                    .onAllNodesWithContentDescription(token, useUnmergedTree = true)
+                    .fetchSemanticsNodes()
+                    .isNotEmpty()
+            }
+        }
+        expectedModels.forEach { (token, url) ->
+            compose
+                .onNodeWithContentDescription(token, useUnmergedTree = true)
+                .assertIsDisplayed()
+            assertTrue("Expected the bundled model $url", requestedUrls.contains(url))
+        }
+        imageLoader.shutdown()
+    }
+
+    @Test
+    fun inlineMentionFromBodyParserIsVisibleInArticleParagraph() {
+        val raw =
+            "后续：ESL 官方运营账号已回复，<a data-user-id=\"16060506\" href=\"https://api.xiaoheihe.cn/open_inapp/#heybox://%7B%22protocol_type%22%3A%22openUser%22%2C%22user_id%22%3A%2216060506%22%7D\">@ESL官方账号</a>\n感谢盒友 [cube_哭泣]"
+        val content =
+            org.json.JSONArray()
+                .put(org.json.JSONObject().put("type", "text").put("text", raw))
+        val block = AccountRepository().parseArticleBlocks(content).single()
+        assertTrue(block is ArticleBlock.Paragraph)
+        assertEquals(
+            "后续：ESL 官方运营账号已回复，@ESL官方账号\n感谢盒友 [cube_哭泣]",
+            (block as ArticleBlock.Paragraph).text,
+        )
+
+        compose.setContent {
+            HeyReadTheme("light", motionEnabled = false) {
+                ArticleBlockContent(block = block, noImages = true, onOpenImage = {})
+            }
+        }
+
+        compose
+            .onNodeWithTag("article-paragraph-text")
+            .assertIsDisplayed()
+            .assertTextEquals("后续：ESL 官方运营账号已回复，@ESL官方账号\n感谢盒友 [cube_哭泣]")
+    }
 
     @Test
     fun detailCommentAndFullscreenEntrypointsAnimateTheExplicitGifSource() {
