@@ -60,7 +60,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          bash ./gradlew assembleRelease --no-daemon --no-parallel --console=plain
+          bash ./gradlew assembleRelease --no-daemon --no-parallel --console=plain --stacktrace --info
 
       - name: Package and optionally sign APK
         shell: bash
