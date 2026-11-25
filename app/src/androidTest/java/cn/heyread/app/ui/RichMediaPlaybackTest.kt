@@ -65,6 +65,7 @@ class RichMediaPlaybackTest {
             linkedMapOf(
                 "[cube_抱拳]" to "https://imgheybox.max-c.com/heybox/emoji/cube_191.png",
                 "[cube_预言]" to "https://imgheybox.max-c.com/heybox/emoji/cube_192.png",
+                "[cube_鬼斩客]" to "https://imgheybox.max-c.com/heybox/emoji/cube_193.png",
             )
         assertEquals(
             expectedModels,
@@ -110,7 +111,7 @@ class RichMediaPlaybackTest {
         compose.setContent {
             CompositionLocalProvider(LocalImageLoader provides imageLoader) {
                 HeyReadTheme("light", motionEnabled = false) {
-                    RichText("[cube_抱拳] 正文 [cube_预言]")
+                    RichText("[cube_抱拳] 正文 [cube_预言] [cube_鬼斩客]")
                 }
             }
         }

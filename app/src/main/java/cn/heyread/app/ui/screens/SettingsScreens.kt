@@ -118,6 +118,7 @@ fun MineSettingsContent(
   onOpenStory: (Story) -> Unit,
   onClearHistory: () -> Unit,
   onReadingPreferencesChange: (ReadingPreferences) -> Unit = {},
+  onRetryHistory: () -> Unit = {},
   onOpenCategory: ((SettingsCategory) -> Unit)? = null,
   selectedCategory: SettingsCategory? = null,
   onImportFont: () -> Unit = {},
@@ -177,6 +178,7 @@ fun MineSettingsContent(
             onClearCache = onClearCache,
             onOpenStory = onOpenStory,
             onClearHistory = onClearHistory,
+            onRetryHistory = onRetryHistory,
             onBack = { selectedCategoryName = null },
             onReadingPreferencesChange = onReadingPreferencesChange,
             onImportFont = onImportFont,
@@ -435,6 +437,7 @@ fun SettingsCategoryScreen(
   onClearHistory: () -> Unit,
   onBack: () -> Unit,
   onReadingPreferencesChange: (ReadingPreferences) -> Unit = {},
+  onRetryHistory: () -> Unit = {},
   onImportFont: () -> Unit = {},
   onRemoveFont: (String) -> Unit = {},
   onContentBlockingAction: (ContentBlockingAction) -> Unit = {},
@@ -488,7 +491,7 @@ fun SettingsCategoryScreen(
           LocalSharedCoverEntryId.current,
           LocalSharedCoverCoordinator.current,
         )
-        LocalHistorySettings(ui, onOpenStory, onClearHistory, isCurrentPage)
+        LocalHistorySettings(ui, onOpenStory, onClearHistory, onRetryHistory, isCurrentPage)
       }
       SettingsCategory.About -> AboutSettings()
     }
@@ -1006,6 +1009,7 @@ private fun LocalHistorySettings(
   ui: UiState,
   onOpenStory: (Story) -> Unit,
   onClearHistory: () -> Unit,
+  onRetryHistory: () -> Unit,
   isCurrentPage: Boolean,
 ) {
   val blocking =
@@ -1017,9 +1021,14 @@ private fun LocalHistorySettings(
     )
   Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
     SectionLabel("本机阅读历史 · ${ui.history.size}", Modifier.testTag("settings-history"))
+    if (ui.historyLoading) Text("正在读取本机阅读记录…", Modifier.testTag("settings-history-loading"))
+    ui.historyError?.let { message ->
+      Text(message, color = MaterialTheme.colorScheme.error, modifier = Modifier.testTag("settings-history-error"))
+      TextButton(onClick = onRetryHistory, modifier = Modifier.heightIn(min = 48.dp).testTag("settings-history-retry")) { Text("重试读取") }
+    }
     if (blocking.loading || blocking.error != null || blocking.matchedCount > 0)
       ContentBlockingNotice(blocking)
-    if (ui.history.isEmpty()) {
+    if (ui.history.isEmpty() && !ui.historyLoading && ui.historyError == null) {
       Text("还没有本机阅读记录", Modifier.padding(16.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
     } else {
       blocking.items.take(5).forEachIndexed { index, story ->
@@ -1034,11 +1043,12 @@ private fun LocalHistorySettings(
     }
     TextButton(
       onClick = onClearHistory,
+      enabled = !ui.historyBusy && ui.history.isNotEmpty(),
       modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("settings-history-clear"),
     ) {
       Icon(Icons.Filled.Delete, null)
       Spacer(Modifier.width(8.dp))
-      Text("清理阅读历史")
+      Text(if (ui.historyBusy) "正在清理…" else "清理阅读历史")
     }
   }
 }

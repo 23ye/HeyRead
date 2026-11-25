@@ -32,6 +32,7 @@ import androidx.lifecycle.ViewModelStore
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import cn.heyread.app.data.local.LibraryStore
+import cn.heyread.app.data.local.RecordsTestRule
 import cn.heyread.app.data.model.ContentBlockKind
 import cn.heyread.app.data.model.ContentBlockingAction
 import cn.heyread.app.ui.screens.SettingsCategory
@@ -57,6 +58,7 @@ import org.junit.runner.RunWith
 class ContentBlockingSettingsTest {
   @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
   @get:Rule val temporaryFolder = TemporaryFolder()
+  @get:Rule val recordsRule = RecordsTestRule()
 
   private var fixture: Fixture? = null
 
@@ -358,7 +360,7 @@ class ContentBlockingSettingsTest {
     }
     val newStore = {
       val fontsDirectory = File(isolatedRoot, "reading-fonts").apply { mkdirs() }
-      LibraryStore(context, fontsDirectory, dataStore)
+      LibraryStore(context, fontsDirectory, dataStore, recordsRule.recordsFor(dataStore))
     }
     val owner = ViewModelStore()
     lateinit var appViewModel: AppViewModel

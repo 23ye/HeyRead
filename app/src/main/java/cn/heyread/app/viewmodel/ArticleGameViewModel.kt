@@ -3,6 +3,8 @@ package cn.heyread.app.viewmodel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import dagger.hilt.android.lifecycle.HiltViewModel
+import javax.inject.Inject
 import cn.heyread.app.data.model.ArticleLabel
 import cn.heyread.app.data.remote.ArticleGameRepository
 import cn.heyread.app.data.remote.CaptchaCallbackResult
@@ -49,8 +51,9 @@ private data class PendingGameChallenge(
     val inFlight: Boolean = false,
 )
 
-class ArticleGameViewModel(
-    private val repository: ArticleGameRepository = ArticleGameRepository()
+@HiltViewModel
+class ArticleGameViewModel @Inject constructor(
+    private val repository: ArticleGameRepository
 ) : ViewModel() {
   private val mutableState = MutableStateFlow(ArticleGameUiState())
   val state = mutableState.asStateFlow()
@@ -60,6 +63,8 @@ class ArticleGameViewModel(
   private var nextAttemptId = 0L
   private var pending: PendingGameChallenge? = null
   private var active = true
+
+  constructor() : this(ArticleGameRepository())
 
   fun bindArticle(articleKey: String, appIds: List<Int>) {
     val ids = appIds.filter { it > 0 }.distinct()

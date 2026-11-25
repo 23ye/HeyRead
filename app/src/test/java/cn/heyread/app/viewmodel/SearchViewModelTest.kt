@@ -1,5 +1,6 @@
 package cn.heyread.app.viewmodel
 
+import androidx.lifecycle.SavedStateHandle
 import cn.heyread.app.data.local.SearchHistoryEntry
 import cn.heyread.app.data.local.SearchHistoryStore
 import cn.heyread.app.data.model.SearchScope
@@ -61,6 +62,7 @@ class SearchViewModelTest {
             runCurrent()
             assertEquals("query", calls.single().first)
             assertEquals("query", history.entries.single().query)
+            assertEquals(history.entries, vm.state.value.history)
             vm.loadMore()
             runCurrent()
             assertEquals(20, calls.last().second)
@@ -69,6 +71,81 @@ class SearchViewModelTest {
             runCurrent()
             assertEquals(20, calls.last().second)
             assertEquals(listOf("first", "second"), vm.state.value.items.map { it.id })
+            vm.clearHistory()
+            runCurrent()
+            assertTrue(history.entries.isEmpty())
+            assertTrue(vm.state.value.history.isEmpty())
+        }
+
+    @Test
+    fun savedSearchArgumentsRestoreScopeAndSetQueryWaitsForExplicitSubmit() =
+        runTest(dispatcher) {
+            val arguments =
+                SavedStateHandle(
+                    mapOf(
+                        SearchViewModel.ARG_SCOPE_TYPE to SearchScopeType.HASHTAG.name,
+                        SearchViewModel.ARG_SCOPE_ID to "77",
+                        SearchViewModel.ARG_SCOPE_NAME to "Synthetic topic",
+                        SearchViewModel.ARG_QUERY to "",
+                    )
+                )
+            val calls = mutableListOf<Pair<String, SearchScope>>()
+            val history = MemorySearchHistory()
+            val vm =
+                SearchViewModel(
+                    savedStateHandle = arguments,
+                    loader = OnlineSearchLoader { query, scope, offset, _, _, _ ->
+                        calls += query to scope
+                        batch("result", offset + 20, false)
+                    },
+                    historyStore = history,
+                )
+            runCurrent()
+
+            assertEquals(SearchScope(SearchScopeType.HASHTAG, "77", "Synthetic topic"), vm.state.value.scope)
+            assertEquals("", vm.state.value.query)
+            assertTrue(calls.isEmpty())
+            assertTrue(history.entries.isEmpty())
+
+            vm.setQuery("draft only")
+            runCurrent()
+            assertEquals("draft only", vm.state.value.query)
+            assertTrue(calls.isEmpty())
+            assertTrue(history.entries.isEmpty())
+
+            vm.submit()
+            runCurrent()
+            assertEquals(listOf("draft only" to vm.state.value.scope), calls)
+            assertEquals("draft only", history.entries.single().query)
+            assertEquals(vm.state.value.scope, history.entries.single().scope)
+
+            val routeScope = SearchScope(SearchScopeType.SECTION, "88", "Routed section")
+            val routeQuery = "  " + "r".repeat(121) + "  "
+            val expectedQuery = "r".repeat(120)
+            val routedCalls = mutableListOf<Pair<String, SearchScope>>()
+            val routedHistory = MemorySearchHistory()
+            val routedVm =
+                SearchViewModel(
+                    savedStateHandle =
+                        SavedStateHandle(
+                            mapOf(
+                                SearchViewModel.ARG_SCOPE_TYPE to routeScope.type.name,
+                                SearchViewModel.ARG_SCOPE_ID to routeScope.id,
+                                SearchViewModel.ARG_SCOPE_NAME to routeScope.name,
+                                SearchViewModel.ARG_QUERY to routeQuery,
+                            )
+                        ),
+                    loader = OnlineSearchLoader { query, scope, offset, _, _, _ ->
+                        routedCalls += query to scope
+                        batch("routed", offset + 20, false)
+                    },
+                    historyStore = routedHistory,
+                )
+            runCurrent()
+            assertEquals(listOf(expectedQuery to routeScope), routedCalls)
+            assertEquals(expectedQuery, routedVm.state.value.submittedQuery)
+            assertEquals(expectedQuery, routedHistory.entries.single().query)
+            assertEquals(routeScope, routedHistory.entries.single().scope)
         }
 
     @Test

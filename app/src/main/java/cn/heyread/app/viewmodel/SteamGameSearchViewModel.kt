@@ -3,6 +3,8 @@ package cn.heyread.app.viewmodel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import dagger.hilt.android.lifecycle.HiltViewModel
+import javax.inject.Inject
 import cn.heyread.app.data.model.SteamGame
 import cn.heyread.app.data.remote.SteamGameSearchRepository
 import cn.heyread.app.data.remote.SteamGameSearchSource
@@ -20,14 +22,17 @@ data class SteamGameSearchState(
   val hasSearched: Boolean = false,
 )
 
-class SteamGameSearchViewModel(
-  private val repository: SteamGameSearchSource = SteamGameSearchRepository()
+@HiltViewModel
+class SteamGameSearchViewModel @Inject constructor(
+  private val repository: SteamGameSearchSource
 ) : ViewModel() {
   private val mutableState = MutableStateFlow(SteamGameSearchState())
   val state = mutableState.asStateFlow()
 
   private var generation = 0L
   private var searchJob: Job? = null
+
+  constructor() : this(SteamGameSearchRepository())
 
   fun updateQuery(query: String) {
     if (query == mutableState.value.query) return

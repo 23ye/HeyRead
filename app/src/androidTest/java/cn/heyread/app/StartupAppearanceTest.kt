@@ -24,6 +24,7 @@ import androidx.lifecycle.ViewModelStore
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import cn.heyread.app.data.local.LibraryStore
+import cn.heyread.app.data.local.RecordsTestRule
 import cn.heyread.app.ui.theme.HeyReadTheme
 import cn.heyread.app.viewmodel.AppViewModel
 import java.io.File
@@ -56,6 +57,7 @@ import org.junit.runner.RunWith
 class StartupAppearanceTest {
   @get:Rule val temporaryFolder = TemporaryFolder()
   @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
+  @get:Rule val recordsRule = RecordsTestRule()
 
   private var storeScope: CoroutineScope? = null
   private var viewModelStore: ViewModelStore? = null
@@ -173,7 +175,11 @@ class StartupAppearanceTest {
     assertNotNull(state.startupAppearanceNotice)
     assertTrue(state.startupAppearanceNotice!!.contains("原设置未更改"))
     val saved =
-      LibraryStore(InstrumentationRegistry.getInstrumentation().targetContext, base)
+      LibraryStore(
+        InstrumentationRegistry.getInstrumentation().targetContext,
+        base,
+        recordsRule.recordsFor(base),
+      )
         .getStartupAppearance()
     assertEquals("dark", saved.theme)
     assertEquals("purple", saved.accent)
@@ -203,7 +209,11 @@ class StartupAppearanceTest {
     assertFalse(viewModel.state.value.noImages)
     assertEquals(
       "dark",
-      LibraryStore(InstrumentationRegistry.getInstrumentation().targetContext, base)
+      LibraryStore(
+        InstrumentationRegistry.getInstrumentation().targetContext,
+        base,
+        recordsRule.recordsFor(base),
+      )
         .getStartupAppearance()
         .theme,
     )
@@ -241,6 +251,7 @@ class StartupAppearanceTest {
             instrumentation.targetContext,
             File(temporaryFolder.root, "fonts-${System.nanoTime()}").apply { mkdirs() },
             dataStore,
+            recordsRule.recordsFor(dataStore),
           )
         )
       owner.put("startup-appearance", viewModel)

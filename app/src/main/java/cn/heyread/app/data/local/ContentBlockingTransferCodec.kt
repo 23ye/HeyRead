@@ -8,57 +8,49 @@ import java.nio.ByteBuffer
 import java.nio.charset.CharacterCodingException
 import java.nio.charset.CodingErrorAction
 import java.util.UUID
-import org.json.JSONArray
-import org.json.JSONException
-import org.json.JSONObject
-import org.json.JSONTokener
+import kotlinx.serialization.decodeFromString
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 
 data class ContentBlockingImportDocument(
-    val rules: List<ContentBlockRule>,
-    val totalCount: Int,
-    val duplicateCount: Int,
+  val rules: List<ContentBlockRule>,
+  val totalCount: Int,
+  val duplicateCount: Int,
 )
 
 data class ContentBlockingImportPreview(
-    val baseRules: List<ContentBlockRule>,
-    val addedCount: Int,
-    val duplicateCount: Int,
-    val addedByKind: Map<ContentBlockKind, Int>,
+  val baseRules: List<ContentBlockRule>,
+  val addedCount: Int,
+  val duplicateCount: Int,
+  val addedByKind: Map<ContentBlockKind, Int>,
 )
 
 private const val TRANSFER_FORMAT = "heyread-content-blocking"
 private const val TRANSFER_VERSION = 1
 private const val MAX_JSON_NESTING_DEPTH = 16
+private val transferJson = Json {
+  ignoreUnknownKeys = false
+  explicitNulls = true
+  encodeDefaults = true
+  isLenient = false
+}
 
 fun encodeContentBlockingRules(rules: List<ContentBlockRule>): ByteArray {
   require(rules.size <= CONTENT_BLOCKING_MAX_RULES) { "内容屏蔽导出规则超过500条。" }
   val normalized = rules.map(::validateStoredRule)
   require(normalized == rules) { "内容屏蔽导出规则格式无效。" }
-  require(rules.map(ContentBlockRule::id).distinct().size == rules.size) {
-    "内容屏蔽导出规则标识重复。"
-  }
-  require(rules.map(::contentBlockRuleIdentity).distinct().size == rules.size) {
-    "内容屏蔽导出规则含重复内容。"
-  }
-  val root =
-      JSONObject()
-          .put("format", TRANSFER_FORMAT)
-          .put("version", TRANSFER_VERSION)
-          .put(
-              "rules",
-              JSONArray().apply {
-                rules.forEach { rule ->
-                  put(
-                      JSONObject()
-                          .put("kind", rule.kind.name)
-                          .put("value", rule.value)
-                          .put("label", rule.label)
-                          .put("enabled", rule.enabled)
-                          .put("source", rule.source?.name ?: JSONObject.NULL))
-                }
-              },
-          )
-  val bytes = root.toString().toByteArray(Charsets.UTF_8)
+  require(rules.map(ContentBlockRule::id).distinct().size == rules.size) { "内容屏蔽导出规则标识重复。" }
+  require(rules.map(::contentBlockRuleIdentity).distinct().size == rules.size) { "内容屏蔽导出规则含重复内容。" }
+  val document =
+    TransferDocumentDto(
+      TRANSFER_FORMAT,
+      TRANSFER_VERSION,
+      rules.map { TransferRuleDto(it.kind.name, it.value, it.label, it.enabled, it.source?.name) },
+    )
+  val bytes = transferJson.encodeToString(document).toByteArray(Charsets.UTF_8)
   require(bytes.size <= CONTENT_BLOCKING_MAX_JSON_BYTES) { "内容屏蔽导出文件超过256KiB。" }
   return bytes
 }
@@ -66,99 +58,106 @@ fun encodeContentBlockingRules(rules: List<ContentBlockRule>): ByteArray {
 fun decodeContentBlockingRules(bytes: ByteArray): ContentBlockingImportDocument {
   require(bytes.size <= CONTENT_BLOCKING_MAX_JSON_BYTES) { "内容屏蔽导入文件超过256KiB。" }
   val decoded =
-      try {
-        Charsets.UTF_8
-            .newDecoder()
-            .onMalformedInput(CodingErrorAction.REPORT)
-            .onUnmappableCharacter(CodingErrorAction.REPORT)
-            .decode(ByteBuffer.wrap(bytes))
-            .toString()
-            .removePrefix("\uFEFF")
-      } catch (_: CharacterCodingException) {
-        error("内容屏蔽导入文件不是有效UTF-8。")
-      }
-  val tokener = JSONTokener(decoded)
+    try {
+      Charsets.UTF_8.newDecoder()
+        .onMalformedInput(CodingErrorAction.REPORT)
+        .onUnmappableCharacter(CodingErrorAction.REPORT)
+        .decode(ByteBuffer.wrap(bytes))
+        .toString()
+        .removePrefix("\uFEFF")
+    } catch (_: CharacterCodingException) {
+      error("内容屏蔽导入文件不是有效UTF-8。")
+    }
   StrictJsonSyntax(decoded).validate()
-  val root =
-      try {
-        tokener.nextValue() as? JSONObject ?: error("内容屏蔽导入文件格式无效。")
-      } catch (_: JSONException) {
-        error("内容屏蔽导入文件JSON无效。")
-      }
-  requireTransferKeys(root, setOf("format", "version", "rules"))
-  require(root.opt("format") == TRANSFER_FORMAT) { "内容屏蔽导入文件格式不受支持。" }
-  val version = root.opt("version")
-  require(
-      (version is Int || version is Long) &&
-          (version as Number).toLong() == TRANSFER_VERSION.toLong(),
-  ) { "内容屏蔽导入文件版本不受支持。" }
-  val rows = root.opt("rules") as? JSONArray ?: error("内容屏蔽导入文件缺少规则列表。")
-  require(rows.length() <= CONTENT_BLOCKING_MAX_RULES) { "内容屏蔽导入文件超过500条规则。" }
+  val parsed =
+    try {
+      transferJson.parseToJsonElement(decoded)
+    } catch (_: Exception) {
+      error("内容屏蔽导入文件JSON无效。")
+    }
+  val root = parsed as? JsonObject ?: error("内容屏蔽导入文件格式无效。")
+  require(root.keys == setOf("format", "version", "rules")) { "内容屏蔽导入文件字段无效。" }
+  val formatToken = root["format"] as? JsonPrimitive
+  require(formatToken != null && formatToken.isString && formatToken.content == TRANSFER_FORMAT) {
+    "内容屏蔽导入文件格式不受支持。"
+  }
+  val versionToken = root["version"] as? JsonPrimitive
+  require(versionToken != null && !versionToken.isString && versionToken.content == "1") {
+    "内容屏蔽导入文件版本不受支持。"
+  }
+  val rows = root["rules"] as? JsonArray ?: error("内容屏蔽导入文件缺少规则列表。")
+  require(rows.size <= CONTENT_BLOCKING_MAX_RULES) { "内容屏蔽导入文件超过500条规则。" }
+  rows.forEach { item ->
+    val fields = item as? kotlinx.serialization.json.JsonObject ?: error("内容屏蔽导入规则格式无效。")
+    require(fields.keys == setOf("kind", "value", "label", "enabled", "source")) { "内容屏蔽导入规则字段无效。" }
+    listOf("kind", "value", "label").forEach { key ->
+      val token = fields[key] as? JsonPrimitive
+      require(token != null && token.isString) { "内容屏蔽导入规则文本字段类型无效。" }
+    }
+    val enabled = fields["enabled"] as? JsonPrimitive
+    require(enabled != null && !enabled.isString && enabled.content in setOf("true", "false")) {
+      "内容屏蔽导入规则启停状态无效。"
+    }
+    val source = fields["source"]
+    require(
+      source == kotlinx.serialization.json.JsonNull || (source is JsonPrimitive && source.isString)
+    ) {
+      "内容屏蔽导入规则来源无效。"
+    }
+  }
+  val dto =
+    try {
+      transferJson.decodeFromString<TransferDocumentDto>(decoded)
+    } catch (_: Exception) {
+      error("内容屏蔽导入文件字段或类型无效。")
+    }
 
   val seen = mutableSetOf<String>()
   val rules = mutableListOf<ContentBlockRule>()
   var duplicateCount = 0
-  repeat(rows.length()) { index ->
-    val row = rows.opt(index) as? JSONObject ?: error("内容屏蔽导入规则格式无效。")
-    requireTransferKeys(row, setOf("kind", "value", "label", "enabled", "source"))
-    val kindName = row.opt("kind") as? String ?: error("内容屏蔽导入规则类型无效。")
+  dto.rules.forEach { row ->
+    val kindName = row.kind
     val kind =
-        ContentBlockKind.entries.firstOrNull { it.name == kindName }
-            ?: error("内容屏蔽导入规则类型无效。")
-    val value = row.opt("value") as? String ?: error("内容屏蔽导入规则内容无效。")
-    val label = row.opt("label") as? String ?: error("内容屏蔽导入规则备注无效。")
-    val enabled =
-        row.opt("enabled") as? Boolean ?: error("内容屏蔽导入规则启停状态无效。")
+      ContentBlockKind.entries.firstOrNull { it.name == kindName } ?: error("内容屏蔽导入规则类型无效。")
+    val value = row.value
+    val label = row.label
+    val enabled = row.enabled
     val source =
-        when (val rawSource = row.opt("source")) {
-          JSONObject.NULL -> null
-          is String -> Source.entries.firstOrNull { it.name == rawSource }
-              ?: error("内容屏蔽导入规则来源无效。")
-          else -> error("内容屏蔽导入规则来源无效。")
-        }
+      row.source?.let { rawSource ->
+        Source.entries.firstOrNull { it.name == rawSource } ?: error("内容屏蔽导入规则来源无效。")
+      }
     val candidate =
-        validateStoredRule(
-            ContentBlockRule(
-                id = UUID.randomUUID().toString(),
-                kind = kind,
-                value = value,
-                label = label,
-                enabled = enabled,
-                source = source,
-            ),
+      validateStoredRule(
+        ContentBlockRule(
+          id = UUID.randomUUID().toString(),
+          kind = kind,
+          value = value,
+          label = label,
+          enabled = enabled,
+          source = source,
         )
+      )
     val identity = contentBlockRuleIdentity(candidate)
     if (!seen.add(identity)) duplicateCount++ else rules += candidate
   }
-  return ContentBlockingImportDocument(rules, rows.length(), duplicateCount)
+  return ContentBlockingImportDocument(rules, rows.size, duplicateCount)
 }
 
 fun previewContentBlockingImport(
-    config: ContentBlockingConfig,
-    document: ContentBlockingImportDocument,
+  config: ContentBlockingConfig,
+  document: ContentBlockingImportDocument,
 ): ContentBlockingImportPreview {
-  require(document.rules.size <= CONTENT_BLOCKING_MAX_RULES) {
-    "内容屏蔽导入文件超过500条规则。"
-  }
+  require(document.rules.size <= CONTENT_BLOCKING_MAX_RULES) { "内容屏蔽导入文件超过500条规则。" }
   val existing = config.rules.mapTo(mutableSetOf(), ::contentBlockRuleIdentity)
   val added = document.rules.filterNot { contentBlockRuleIdentity(it) in existing }
-  require(config.rules.size + added.size <= CONTENT_BLOCKING_MAX_RULES) {
-    "最多保存500条屏蔽规则。"
-  }
+  require(config.rules.size + added.size <= CONTENT_BLOCKING_MAX_RULES) { "最多保存500条屏蔽规则。" }
   val alreadyPresent = document.rules.size - added.size
   return ContentBlockingImportPreview(
-      baseRules = config.rules.toList(),
-      addedCount = added.size,
-      duplicateCount = document.duplicateCount + alreadyPresent,
-      addedByKind =
-          ContentBlockKind.entries.associateWith { kind -> added.count { it.kind == kind } },
+    baseRules = config.rules.toList(),
+    addedCount = added.size,
+    duplicateCount = document.duplicateCount + alreadyPresent,
+    addedByKind = ContentBlockKind.entries.associateWith { kind -> added.count { it.kind == kind } },
   )
-}
-
-private fun requireTransferKeys(json: JSONObject, allowed: Set<String>) {
-  val keys = json.keys()
-  while (keys.hasNext()) require(keys.next() in allowed) { "内容屏蔽导入文件包含未知字段。" }
-  require(allowed.all { json.has(it) }) { "内容屏蔽导入文件缺少必要字段。" }
 }
 
 /** Reject JSONTokener's permissive extensions and duplicate object keys before reading values. */
@@ -187,7 +186,8 @@ private class StrictJsonSyntax(private val input: String) {
       't' -> parseLiteral("true")
       'f' -> parseLiteral("false")
       'n' -> parseLiteral("null")
-      '-', in '0'..'9' -> parseNumber()
+      '-',
+      in '0'..'9' -> parseNumber()
       else -> error("内容屏蔽导入文件JSON无效。")
     }
   }
@@ -255,7 +255,9 @@ private class StrictJsonSyntax(private val input: String) {
         char == '\\' -> {
           require(index < input.length) { "内容屏蔽导入文件JSON无效。" }
           when (val escaped = input[index++]) {
-            '"', '\\', '/' -> result.append(escaped)
+            '"',
+            '\\',
+            '/' -> result.append(escaped)
             'b' -> result.append('\b')
             'f' -> result.append('\u000c')
             'n' -> result.append('\n')
@@ -264,9 +266,7 @@ private class StrictJsonSyntax(private val input: String) {
             'u' -> {
               require(index + 4 <= input.length) { "内容屏蔽导入文件JSON无效。" }
               val hex = input.substring(index, index + 4)
-              require(hex.all { it.digitToIntOrNull(16) != null }) {
-                "内容屏蔽导入文件JSON无效。"
-              }
+              require(hex.all { it.digitToIntOrNull(16) != null }) { "内容屏蔽导入文件JSON无效。" }
               result.append(hex.toInt(16).toChar())
               index += 4
             }

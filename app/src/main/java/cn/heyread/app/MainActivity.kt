@@ -6,10 +6,12 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.getValue
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.hilt.navigation.compose.hiltViewModel
 import cn.heyread.app.navigation.HeyReadNavigation
 import cn.heyread.app.viewmodel.AppViewModel
+import dagger.hilt.android.AndroidEntryPoint
 
+@AndroidEntryPoint
 class MainActivity : ComponentActivity() {
   private var startupPreDrawGate: StartupPreDrawGate? = null
 
@@ -19,7 +21,7 @@ class MainActivity : ComponentActivity() {
     val gate = StartupPreDrawGate(window.decorView)
     startupPreDrawGate = gate
     setContent {
-      val viewModel: AppViewModel = viewModel(factory = AppViewModel.Factory(application))
+      val viewModel: AppViewModel = hiltViewModel()
       val ui by viewModel.state.collectAsStateWithLifecycle()
       StartupAppearanceContent(ui.startupAppearanceReady, gate) { HeyReadNavigation(viewModel) }
     }

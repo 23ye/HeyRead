@@ -23,7 +23,9 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.lifecycle.ViewModelStore
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import cn.heyread.app.HiltTestActivity
 import cn.heyread.app.data.local.LibraryStore
+import cn.heyread.app.data.local.RecordsTestRule
 import cn.heyread.app.data.model.Source
 import cn.heyread.app.viewmodel.AppViewModel
 import cn.heyread.app.viewmodel.FeedTab
@@ -42,9 +44,10 @@ import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class TabletSettingsNavigationTest {
-    @get:Rule val compose = createAndroidComposeRule<androidx.activity.ComponentActivity>()
+    @get:Rule val compose = createAndroidComposeRule<HiltTestActivity>()
 
     @get:Rule val temporaryFolder = TemporaryFolder()
+    @get:Rule val recordsRule = RecordsTestRule()
 
     private var testViewModelStore: ViewModelStore? = null
     private var testDataStoreScope: CoroutineScope? = null
@@ -194,7 +197,14 @@ class TabletSettingsNavigationTest {
         testViewModelStore = owner
         lateinit var viewModel: AppViewModel
         compose.activityRule.scenario.onActivity {
-            viewModel = AppViewModel(LibraryStore(instrumentationContext, injectedPreferencesStore))
+            viewModel =
+                AppViewModel(
+                    LibraryStore(
+                        instrumentationContext,
+                        injectedPreferencesStore,
+                        recordsRule.recordsFor(injectedPreferencesStore),
+                    )
+                )
             owner.put("tablet-settings-navigation", viewModel)
             viewModel.selectSource(FeedTab.DISCOVER, Source.DEMO)
         }

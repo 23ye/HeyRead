@@ -7,7 +7,6 @@ import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.drawable.BitmapDrawable
 import android.net.Uri
-import androidx.activity.ComponentActivity
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.width
@@ -36,7 +35,9 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.lifecycle.ViewModelStore
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import cn.heyread.app.HiltTestActivity
 import cn.heyread.app.data.local.LibraryStore
+import cn.heyread.app.data.local.RecordsTestRule
 import cn.heyread.app.data.model.Source
 import cn.heyread.app.viewmodel.AppViewModel
 import cn.heyread.app.viewmodel.FeedTab
@@ -62,9 +63,10 @@ import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class SharedCoverNavigationReturnTest {
-  @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
+  @get:Rule val compose = createAndroidComposeRule<HiltTestActivity>()
 
   @get:Rule val temporaryFolder = TemporaryFolder()
+  @get:Rule val recordsRule = RecordsTestRule()
 
   private var testViewModelStore: ViewModelStore? = null
   private var testDataStoreScope: CoroutineScope? = null
@@ -335,6 +337,7 @@ class SharedCoverNavigationReturnTest {
         instrumentationContext,
         File(isolatedRoot, "reading-fonts"),
         injectedPreferencesStore,
+        recordsRule.recordsFor(injectedPreferencesStore),
       )
     kotlinx.coroutines.runBlocking {
       store.setMotionEnabled(true)

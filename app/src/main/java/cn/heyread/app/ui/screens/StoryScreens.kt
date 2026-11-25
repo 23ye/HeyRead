@@ -3126,6 +3126,7 @@ fun MineScreen(
       onClearCache = vm::clearCache,
       onOpenStory = onOpen,
       onClearHistory = vm::clearHistory,
+      onRetryHistory = vm::retryHistory,
       onOpenCategory = onOpenSettingsCategory,
       selectedCategory = selectedSettingsCategory,
     )

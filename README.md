@@ -144,7 +144,7 @@ Release 构建使用 `assembleRelease`，已启用 R8 和资源压缩；公开�
 
 ## 技术栈
 
-界面使用 Kotlin、Jetpack Compose、Material 3 与 Navigation Compose；数据与网络使用 DataStore、OkHttp 和 Jsoup；图片与视频使用 Coil 2 和 Media3；端侧翻译使用 ML Kit。
+界面使用 Kotlin、Jetpack Compose、Material 3 与 Navigation Compose；采用 UI → ViewModel → Repository 分层，Hilt负责主干依赖创建，协程与StateFlow管理异步状态。本机阅读历史和搜索记录使用 Room，主题、字体和内容屏蔽等偏好使用 DataStore；Kotlin Serialization 用于历史快照及屏蔽规则文件等 JSON 编解码；网络与正文解析使用 OkHttp 和 Jsoup，图片与视频使用 Coil 2 和 Media3，端侧翻译使用 ML Kit。
 
 ## 反馈与建议
 

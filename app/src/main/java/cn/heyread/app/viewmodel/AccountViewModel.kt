@@ -1,8 +1,9 @@
 package cn.heyread.app.viewmodel
 
 import android.app.Application
-import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import dagger.hilt.android.lifecycle.HiltViewModel
 import cn.heyread.app.data.account.AccountRepository
 import cn.heyread.app.data.account.AccountSession
 import cn.heyread.app.data.account.AccountSessionExpiredException
@@ -30,6 +31,7 @@ import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
+import javax.inject.Inject
 
 data class AccountUiState(
     val session: AccountSession? = null,
@@ -67,11 +69,16 @@ data class AccountUiState(
     val commentRefreshing: Set<String> = emptySet(),
 )
 
-class AccountViewModel @JvmOverloads constructor(
-    application: Application,
-    internal val repository: AccountRepository = AccountRepository(),
-) : AndroidViewModel(application) {
-    private val sessionStore = SessionStore(application)
+@HiltViewModel
+class AccountViewModel @Inject constructor(
+    internal val repository: AccountRepository,
+    private val sessionStore: SessionStore,
+) : ViewModel() {
+    @JvmOverloads
+    constructor(
+        application: Application,
+        repository: AccountRepository = AccountRepository(),
+    ) : this(repository, SessionStore(application))
     private val mutableState = MutableStateFlow(AccountUiState())
     val state = mutableState.asStateFlow()
     private var challengeJob: Job? = null

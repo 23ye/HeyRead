@@ -34,7 +34,6 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
-import cn.heyread.app.data.local.ContentBlockingRuleFiles
 import cn.heyread.app.data.model.ContentBlockKind
 import cn.heyread.app.data.model.ContentBlockRule
 import cn.heyread.app.data.model.ContentBlockTarget
@@ -43,8 +42,9 @@ import cn.heyread.app.data.model.parseContentBlockIdentityInput
 import cn.heyread.app.ui.components.ContentBlockingLinkPreview
 import cn.heyread.app.ui.components.MotionAlertDialog
 import cn.heyread.app.viewmodel.ContentBlockingTransferViewModel
-import cn.heyread.app.viewmodel.ContentBlockingTransferViewModelFactory
 import cn.heyread.app.viewmodel.UiState
+import cn.heyread.app.di.ContentBlockingTransferEntryPoint
+import dagger.hilt.android.EntryPointAccessors
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -56,8 +56,13 @@ fun ContentBlockingSettings(
   val config = ui.contentBlocking
   val busy = ui.contentBlockingLoading || ui.contentBlockingBusy || !isCurrentPage
   val context = LocalContext.current
-  val ruleFiles = remember(context) { ContentBlockingRuleFiles(context.contentResolver) }
-  val transferFactory = remember(ruleFiles) { ContentBlockingTransferViewModelFactory(ruleFiles) }
+  val transferFactory =
+    remember(context.applicationContext) {
+      EntryPointAccessors.fromApplication(
+          context.applicationContext,
+          ContentBlockingTransferEntryPoint::class.java,
+      ).transferViewModelFactory()
+    }
   val transferViewModel: ContentBlockingTransferViewModel =
     viewModel(key = "content-blocking-transfer", factory = transferFactory)
   var selectedKindName by rememberSaveable { mutableStateOf(ContentBlockKind.KEYWORD.name) }

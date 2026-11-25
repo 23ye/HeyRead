@@ -1,6 +1,8 @@
 package cn.heyread.app.navigation
 
 import android.app.Activity
+import android.content.Context
+import android.content.ContextWrapper
 import android.content.Intent
 import android.net.Uri
 import androidx.activity.compose.BackHandler
@@ -38,6 +40,7 @@ import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavGraphBuilder
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
@@ -45,17 +48,14 @@ import androidx.navigation.compose.*
 import androidx.navigation.navArgument
 import cn.heyread.app.data.account.SharedArticleContentParser
 import cn.heyread.app.data.account.StoryDetailResolver
-import cn.heyread.app.data.local.LibraryStore
 import cn.heyread.app.data.model.AuthorProfile
 import cn.heyread.app.data.model.ContentBlockingAction
 import cn.heyread.app.data.model.SearchScope
 import cn.heyread.app.data.model.SearchScopeType
 import cn.heyread.app.data.model.Source
 import cn.heyread.app.data.model.articleGameIds
-import cn.heyread.app.data.remote.DestinationRepository
 import cn.heyread.app.data.remote.DestinationTarget
 import cn.heyread.app.data.remote.DestinationType
-import cn.heyread.app.data.remote.PublicSearchRepository
 import cn.heyread.app.data.remote.StoryRepository
 import cn.heyread.app.ui.components.ContentBlockingContext
 import cn.heyread.app.ui.components.ContentBlockingCardActions
@@ -90,16 +90,35 @@ import cn.heyread.app.viewmodel.SearchViewModel
 import cn.heyread.app.viewmodel.SocialActionsViewModel
 import cn.heyread.app.viewmodel.SteamGameSearchViewModel
 import cn.heyread.app.viewmodel.SteamTranslationViewModel
+import cn.heyread.app.di.ActivityFactoryEntryPoint
+import dagger.hilt.android.EntryPointAccessors
 import kotlinx.coroutines.flow.collect
+
+private tailrec fun Context.findActivity(): Activity =
+    when (this) {
+      is Activity -> this
+      is ContextWrapper -> baseContext.findActivity()
+      else -> error("导航需要Activity宿主")
+    }
 
 @Composable
 fun HeyReadNavigation(vm: AppViewModel) {
   val ui by vm.state.collectAsStateWithLifecycle()
-  val accountViewModel: AccountViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
+  val context = LocalContext.current
+  val activity = remember(context) { context.findActivity() }
+  val runtimeFactories =
+    remember(activity) {
+      EntryPointAccessors.fromActivity(activity, ActivityFactoryEntryPoint::class.java)
+        .runtimeViewModelFactories()
+    }
+  val accountViewModel: AccountViewModel = hiltViewModel()
   val account by accountViewModel.state.collectAsStateWithLifecycle()
   val contentBlockingSnackbar = remember { SnackbarHostState() }
   LaunchedEffect(ui.startupAppearanceNotice) {
     ui.startupAppearanceNotice?.let { message -> contentBlockingSnackbar.showSnackbar(message) }
+  }
+  LaunchedEffect(ui.historyError) {
+    ui.historyError?.let { message -> contentBlockingSnackbar.showSnackbar(message) }
   }
   LaunchedEffect(account.session?.userId, account.revision) {
     vm.dismissContentBlockingFeedback()
@@ -107,38 +126,28 @@ fun HeyReadNavigation(vm: AppViewModel) {
   val dynamicFeedViewModel: DynamicFeedViewModel =
     androidx.lifecycle.viewmodel.compose.viewModel(
       factory =
-        DynamicFeedViewModel.Factory(
+        runtimeFactories.dynamicFeed(
           vm::loadRecommendedDynamicFeed,
           accountViewModel.repository::loadFollowedActivity,
           accountViewModel::handleSessionExpired,
           accountViewModel.repository::loadFollowedUsers,
-          DestinationRepository(),
         )
     )
   val dynamicFeed by dynamicFeedViewModel.state.collectAsStateWithLifecycle()
   val socialViewModel: SocialActionsViewModel =
     androidx.lifecycle.viewmodel.compose.viewModel(
       factory =
-        SocialActionsViewModel.Factory(
-          accountViewModel.repository,
-          accountViewModel::handleSessionExpired,
-        )
+        runtimeFactories.socialActions(accountViewModel::handleSessionExpired)
     )
   val commentActionsViewModel: CommentActionsViewModel =
     androidx.lifecycle.viewmodel.compose.viewModel(
       factory =
-        CommentActionsViewModel.Factory(
-          accountViewModel.repository,
-          accountViewModel::handleSessionExpired,
-        )
+        runtimeFactories.commentActions(accountViewModel::handleSessionExpired)
     )
   val authorFollowViewModel: AuthorFollowViewModel =
     androidx.lifecycle.viewmodel.compose.viewModel(
       factory =
-        AuthorFollowViewModel.Factory(
-          accountViewModel.repository,
-          accountViewModel::handleSessionExpired,
-        )
+        runtimeFactories.authorFollow(accountViewModel::handleSessionExpired)
     )
   LaunchedEffect(account.session?.userId, account.revision, account.loadingSession) {
     dynamicFeedViewModel.bindAccount(
@@ -174,7 +183,6 @@ fun HeyReadNavigation(vm: AppViewModel) {
   var pendingFontPickerEntryId by rememberSaveable { mutableStateOf<String?>(null) }
   var fontImportOwnerEntryId by rememberSaveable { mutableStateOf<String?>(null) }
   var fontImportObservedBusy by rememberSaveable { mutableStateOf(false) }
-  val context = LocalContext.current
   val isDark = ui.theme == "dark" || (ui.theme == "system" && isSystemInDarkTheme())
   val motionEnabled = rememberMotionEnabled(ui.motionEnabled)
   val sharedCoverCoordinator = if (motionEnabled) remember { SharedCoverCoordinator() } else null
@@ -411,30 +419,8 @@ fun HeyReadNavigation(vm: AppViewModel) {
       val isCurrentPage =
         nav.currentBackStackEntryAsState().value?.id == entry.id &&
           (!hostIsRoot || LocalPaneContentActive.current)
-      val scopeType =
-        runCatching { SearchScopeType.valueOf(entry.arguments?.getString("scopeType").orEmpty()) }
-          .getOrDefault(SearchScopeType.GLOBAL)
-      val scope =
-        if (scopeType == SearchScopeType.GLOBAL) SearchScope.GLOBAL
-        else
-          SearchScope(
-            scopeType,
-            entry.arguments?.getString("scopeId").orEmpty(),
-            entry.arguments?.getString("scopeName").orEmpty(),
-          )
-      val initialQuery = entry.arguments?.getString("query").orEmpty()
-      val appContext = context.applicationContext
       val searchViewModel: SearchViewModel =
-        androidx.lifecycle.viewmodel.compose.viewModel(
-          viewModelStoreOwner = entry,
-          factory =
-            SearchViewModel.Factory(
-              PublicSearchRepository(),
-              LibraryStore(appContext),
-              scope,
-              initialQuery,
-            ),
-        )
+        hiltViewModel(viewModelStoreOwner = entry)
       LaunchedEffect(account.revision) { searchViewModel.bindSession(account.revision) }
       SharedMotionPage(
         this@composable,
@@ -482,10 +468,7 @@ fun HeyReadNavigation(vm: AppViewModel) {
           entry.arguments?.getString("icon")?.takeIf { it.isNotBlank() && it != "-" },
         )
       val destinationVm: DestinationViewModel =
-        androidx.lifecycle.viewmodel.compose.viewModel(
-          viewModelStoreOwner = entry,
-          factory = DestinationViewModel.Factory(),
-        )
+        hiltViewModel(viewModelStoreOwner = entry)
       SharedMotionPage(
         this@composable,
         entry.id,
@@ -547,15 +530,9 @@ fun HeyReadNavigation(vm: AppViewModel) {
       val id = entry.arguments?.getString("id") ?: ""
       val key = "$source:$id"
       val translationViewModel: SteamTranslationViewModel =
-        androidx.lifecycle.viewmodel.compose.viewModel(
-          viewModelStoreOwner = entry,
-          factory = SteamTranslationViewModel.Factory(),
-        )
+        hiltViewModel(viewModelStoreOwner = entry)
       val articleGameViewModel: cn.heyread.app.viewmodel.ArticleGameViewModel =
-        androidx.lifecycle.viewmodel.compose.viewModel(
-          viewModelStoreOwner = entry,
-          factory = cn.heyread.app.viewmodel.ArticleGameViewModel.Factory(),
-        )
+        hiltViewModel(viewModelStoreOwner = entry)
       val openedStory = ui.knownStories[key]
       val found =
         if (openedStory?.source == source && openedStory.id == id) {
@@ -873,13 +850,8 @@ fun HeyReadNavigation(vm: AppViewModel) {
                       val isCurrentPage =
                         nav.currentBackStackEntryAsState().value?.id == entry.id &&
                           LocalPaneContentActive.current
-                      val steamGameSearchFactory =
-                        remember(entry.id) { SteamGameSearchViewModel.Factory() }
                       val steamGameSearchViewModel: SteamGameSearchViewModel =
-                        androidx.lifecycle.viewmodel.compose.viewModel(
-                          viewModelStoreOwner = entry,
-                          factory = steamGameSearchFactory,
-                        )
+                        hiltViewModel(viewModelStoreOwner = entry)
                       val steamGameSearch by
                         steamGameSearchViewModel.state.collectAsStateWithLifecycle()
                       LaunchedEffect(isCurrentPage) {
@@ -1165,6 +1137,7 @@ fun HeyReadNavigation(vm: AppViewModel) {
                                   openStoryInDetailPane(story, entry.id, true)
                                 },
                                 onClearHistory = vm::clearHistory,
+                                onRetryHistory = vm::retryHistory,
                                 onBack = onBack,
                                 onReadingPreferencesChange = vm::setReadingPreferences,
                                 onImportFont = {

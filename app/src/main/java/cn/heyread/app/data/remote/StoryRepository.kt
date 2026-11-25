@@ -2,6 +2,10 @@ package cn.heyread.app.data.remote
 
 import cn.heyread.app.data.account.SharedArticleContentParser
 import cn.heyread.app.data.model.*
+import cn.heyread.app.di.AppCacheDirectory
+import dagger.assisted.Assisted
+import dagger.assisted.AssistedFactory
+import dagger.assisted.AssistedInject
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -17,7 +21,10 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONObject
 
-class StoryRepository(private val gateway: () -> String, cacheDir: File) {
+class StoryRepository @AssistedInject constructor(
+  @Assisted private val gateway: () -> String,
+  @AppCacheDirectory cacheDir: File,
+) {
   private val client =
     OkHttpClient.Builder()
       .connectTimeout(8, TimeUnit.SECONDS)
@@ -534,4 +541,13 @@ class StoryRepository(private val gateway: () -> String, cacheDir: File) {
         ),
       )
   }
+}
+
+@AssistedFactory
+interface StoryRepositoryAssistedFactory {
+  fun create(gateway: () -> String): StoryRepository
+}
+
+fun interface StoryRepositoryCreator {
+  fun create(gateway: () -> String): StoryRepository
 }

@@ -142,6 +142,40 @@ class HistoryCardsTest {
   }
 
   @Test
+  fun localHistoryShowsRetryErrorAndKeepsExistingFiveCards() {
+    val stories = (1..5).map { historyStory("error-local-$it", Source.DEMO) }
+    val retryCount = mutableStateOf(0)
+    compose.setContent {
+      HeyReadTheme("light") {
+        SettingsCategoryScreen(
+          category = SettingsCategory.LocalHistory,
+          ui = UiState(history = stories, historyError = "读取失败，请重试。", historyLoading = false),
+          gatewayValue = "",
+          advanced = false,
+          onGatewayChange = {},
+          onAdvancedChange = {},
+          onThemeChange = {},
+          onHomeLayoutChange = {},
+          onAccentChange = {},
+          onMotionChange = {},
+          onNoImagesChange = {},
+          onGatewaySave = {},
+          onClearCache = {},
+          onOpenStory = {},
+          onClearHistory = {},
+          onRetryHistory = { retryCount.value++ },
+          onBack = {},
+        )
+      }
+    }
+
+    compose.onNodeWithTag("settings-history-error").assertIsDisplayed()
+    compose.onNodeWithTag("settings-history-retry").assertIsDisplayed().performClick()
+    (1..5).forEach { index -> localCard(HomeLayout.A, index, "error-local").assertExists() }
+    compose.runOnIdle { assertEquals(1, retryCount.value) }
+  }
+
+  @Test
   fun accountHistoryUsesSharedCardsAndOpensOnlyTheAccountHistoryStory() {
     val stories = (1..3).map { historyStory("account-$it", Source.HEYBOX) }
     val favoriteOnly = historyStory("favorite-only", Source.HEYBOX)

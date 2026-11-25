@@ -20,6 +20,7 @@ import androidx.lifecycle.ViewModelStore
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import cn.heyread.app.data.local.LibraryStore
+import cn.heyread.app.data.local.RecordsTestRule
 import cn.heyread.app.data.local.SearchHistoryEntry
 import cn.heyread.app.data.local.SearchHistoryStore
 import cn.heyread.app.data.model.ContentBlockKind
@@ -60,6 +61,7 @@ import org.junit.runner.RunWith
 class ContentBlockingFeedSearchHistoryTest {
   @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
   @get:Rule val temporaryFolder = TemporaryFolder()
+  @get:Rule val recordsRule = RecordsTestRule()
 
   private var feedFixture: FeedFixture? = null
   private var searchOwner: ViewModelStore? = null
@@ -225,7 +227,7 @@ class ContentBlockingFeedSearchHistoryTest {
       PreferenceDataStoreFactory.create(scope = scope) {
         File(isolatedRoot, "library.preferences_pb")
       }
-    val store = LibraryStore(context, File(isolatedRoot, "fonts").apply { mkdirs() }, dataStore)
+    val store = LibraryStore(context, File(isolatedRoot, "fonts").apply { mkdirs() }, dataStore, recordsRule.recordsFor(dataStore))
     val owner = ViewModelStore()
     lateinit var viewModel: AppViewModel
     compose.activityRule.scenario.onActivity {

@@ -6,6 +6,7 @@ import android.os.SystemClock
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import dagger.hilt.android.lifecycle.HiltViewModel
 import cn.heyread.app.data.local.LibraryStore
 import cn.heyread.app.data.local.PreparedReadingFont
 import cn.heyread.app.data.local.ContentBlockingMutation
@@ -14,6 +15,8 @@ import cn.heyread.app.data.model.Channel
 import cn.heyread.app.data.model.Source
 import cn.heyread.app.data.model.Story
 import cn.heyread.app.data.remote.StoryRepository
+import cn.heyread.app.data.remote.StoryRepositoryCreator
+import javax.inject.Inject
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
@@ -55,6 +58,9 @@ data class UiState(
   val discoverFeed: FeedPageState = FeedPageState(Source.HEYBOX),
   val gamesFeed: FeedPageState = FeedPageState(Source.STEAM),
   val history: List<Story> = emptyList(),
+  val historyLoading: Boolean = false,
+  val historyError: String? = null,
+  val historyBusy: Boolean = false,
   val error: String? = null,
   val theme: String = "system",
   val accent: String = "classic",
@@ -84,11 +90,15 @@ data class UiState(
   val notice: String? = null,
 )
 
-class AppViewModel(private val store: LibraryStore) : ViewModel() {
-  private val repository = StoryRepository({ _gateway }, store.cacheDirectory)
+@HiltViewModel
+class AppViewModel @Inject constructor(
+  private val store: LibraryStore,
+  storyRepositoryCreator: StoryRepositoryCreator,
+) : ViewModel() {
   private var _gateway = ""
+  private val repository = storyRepositoryCreator.create { _gateway }
   private val feedConfigurationReady = CompletableDeferred<Unit>()
-  private val _state = MutableStateFlow(UiState())
+  private val _state = MutableStateFlow(UiState(historyLoading = true))
   private val homeLayoutReady = CompletableDeferred<Unit>()
   private val readingPreferencesReady = CompletableDeferred<Unit>()
   private val contentBlockingReady = CompletableDeferred<Unit>()
@@ -109,7 +119,9 @@ class AppViewModel(private val store: LibraryStore) : ViewModel() {
   private var noImagesWriteGeneration = 0L
   private var motionWriteGeneration = 0L
   private var homeLayoutWriteGeneration = 0L
-  private var historyGeneration = 0L
+  private var historyObservationGeneration = 0L
+  private var historyObservationJob: Job? = null
+  private val historyMutationMutex = Mutex()
   private var contentBlockingWriteGeneration = 0L
   private var persistedHomeLayout = HomeLayout.A
   private var homeLayoutWriteJob: Job? = null
@@ -124,11 +136,15 @@ class AppViewModel(private val store: LibraryStore) : ViewModel() {
   @Volatile private var fontImportGeneration = 0L
   @Volatile private var fontSelectionGeneration = 0L
 
+  constructor(store: LibraryStore) : this(
+      store,
+      StoryRepositoryCreator { gateway -> StoryRepository(gateway, store.cacheDirectory) },
+  )
+
   init {
     // Capture before the first suspending store read. A preference edit made while initialization
     // is in flight must always win over the older persisted snapshot.
     val initialReadingPreferencesGeneration = readingPreferencesWriteGeneration
-    val initialHistoryGeneration = historyGeneration
     val initialContentBlockingGeneration = contentBlockingWriteGeneration
     val initialThemeWriteGeneration = themeWriteGeneration
     val initialNoImagesWriteGeneration = noImagesWriteGeneration
@@ -288,25 +304,19 @@ class AppViewModel(private val store: LibraryStore) : ViewModel() {
         _state.update { it.copy(discoverFeed = feedStates.discover, gamesFeed = feedStates.games) }
       }
     }
+    observeLocalHistory()
     viewModelScope.launch {
       try {
         store.removeLegacyFavorites()
         _gateway = store.getGateway()
         val storedHomeLayout = store.getHomeLayout()
         store.cleanupUnreferencedReadingFonts()
-        val storedHistory = store.history()
         persistedHomeLayout = storedHomeLayout
         _state.update { current ->
           current.copy(
             homeLayout =
               if (homeLayoutWriteGeneration == 0L) storedHomeLayout else current.homeLayout,
             gateway = _gateway,
-            history =
-              if (historyGeneration == initialHistoryGeneration) storedHistory else current.history,
-            knownStories =
-              if (historyGeneration == initialHistoryGeneration)
-                storedHistory.associateBy { "${it.source}:${it.id}" }
-              else current.knownStories,
           )
         }
         homeLayoutReady.complete(Unit)
@@ -372,7 +382,6 @@ class AppViewModel(private val store: LibraryStore) : ViewModel() {
   fun loadMore(tab: FeedTab = FeedTab.DISCOVER) = feeds.loadMore(tab)
 
   fun opened(s: Story) {
-    val generation = ++historyGeneration
     val key = "${s.source}:${s.id}"
     val knownStories =
       (_state.value.knownStories + (key to s)).entries.toList().takeLast(80).associate {
@@ -380,13 +389,57 @@ class AppViewModel(private val store: LibraryStore) : ViewModel() {
       }
     _state.value = _state.value.copy(knownStories = knownStories)
     viewModelScope.launch {
-      store.addHistory(s)
-      val storedHistory = store.history()
-      _state.update { current ->
-        if (historyGeneration == generation) current.copy(history = storedHistory) else current
+      historyMutationMutex.withLock {
+        try {
+          store.addHistory(s)
+        } catch (cancelled: CancellationException) {
+          throw cancelled
+        } catch (_: Exception) {
+          _state.update { it.copy(historyError = "保存本机阅读记录失败，请重试。") }
+        }
       }
     }
   }
+
+  private fun observeLocalHistory() {
+    val generation = ++historyObservationGeneration
+    historyObservationJob?.cancel()
+    _state.update { it.copy(historyLoading = true, historyError = null) }
+    historyObservationJob =
+      viewModelScope.launch {
+        try {
+          store.observeHistory().collect { storedHistory ->
+            if (generation != historyObservationGeneration) return@collect
+            _state.update { current ->
+              val known =
+                (current.knownStories + storedHistory.associate { stored ->
+                  val key = "${stored.source}:${stored.id}"
+                  key to (current.details[key] ?: current.knownStories[key] ?: stored)
+                })
+                  .entries
+                  .toList()
+                  .takeLast(80)
+                  .associate { it.toPair() }
+              current.copy(
+                history = storedHistory,
+                knownStories = known,
+                historyLoading = false,
+                historyError = null,
+              )
+            }
+          }
+        } catch (cancelled: CancellationException) {
+          throw cancelled
+        } catch (_: Exception) {
+          if (generation == historyObservationGeneration)
+            _state.update {
+              it.copy(historyLoading = false, historyError = "读取本机阅读记录失败，请重试。")
+            }
+        }
+      }
+  }
+
+  fun retryHistory() = observeLocalHistory()
 
   fun onContentBlockingAction(action: ContentBlockingAction) {
     if (_state.value.contentBlockingBusy) return
@@ -1038,11 +1091,19 @@ class AppViewModel(private val store: LibraryStore) : ViewModel() {
   }
 
   fun clearHistory() {
-    val generation = ++historyGeneration
+    _state.update { it.copy(historyBusy = true, historyError = null) }
     viewModelScope.launch {
-      store.clearHistory()
-      _state.update { current ->
-        if (historyGeneration == generation) current.copy(history = emptyList()) else current
+      historyMutationMutex.withLock {
+        try {
+          store.clearHistory()
+          _state.update { it.copy(historyBusy = false) }
+        } catch (cancelled: CancellationException) {
+          throw cancelled
+        } catch (_: Exception) {
+          _state.update {
+            it.copy(historyBusy = false, historyError = "清空本机阅读记录失败，请重试。")
+          }
+        }
       }
     }
   }

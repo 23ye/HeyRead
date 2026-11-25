@@ -30,6 +30,7 @@ import cn.heyread.app.data.account.CommentImage
 import cn.heyread.app.data.account.FullArticle
 import cn.heyread.app.data.account.RemoteComment
 import cn.heyread.app.data.local.LibraryStore
+import cn.heyread.app.data.local.RecordsTestRule
 import cn.heyread.app.data.model.Source
 import cn.heyread.app.data.model.Story
 import cn.heyread.app.data.remote.ArticleGameRepository
@@ -71,6 +72,7 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class CommentImageGalleryTest {
   @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
+  @get:Rule val recordsRule = RecordsTestRule()
 
   private var owner: ViewModelStore? = null
   private var loader: ImageLoader? = null
@@ -250,7 +252,15 @@ class CommentImageGalleryTest {
       PreferenceDataStoreFactory.create(scope = preferencesScope) {
         File(root, "settings.preferences_pb")
       }
-    val app = AppViewModel(LibraryStore(testContext, File(root, "reading-fonts"), preferences))
+    val app =
+        AppViewModel(
+            LibraryStore(
+                testContext,
+                File(root, "reading-fonts"),
+                preferences,
+                recordsRule.recordsFor(preferences),
+            )
+        )
     val store = ViewModelStore().also { owner = it }
     store.put("comment-gallery-app", app)
     val requestCount = AtomicInteger()

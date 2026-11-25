@@ -22,9 +22,11 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
+import org.junit.Rule
 import org.junit.Test
 
 class ContentBlockingStoreTest {
+  @get:Rule val recordsRule = RecordsTestRule()
   @Test
   fun persistsRulesAtomicallyAndRejectsCorruptConfigWithoutTouchingOtherPreferences() = runTest {
     val context = InstrumentationRegistry.getInstrumentation().targetContext
@@ -52,7 +54,7 @@ class ContentBlockingStoreTest {
         preferences[fontKey] = 21f
         preferences[fontsKey] = "fonts-sentinel"
       }
-      val store = LibraryStore(context, isolatedFonts, injectedStore)
+      val store = LibraryStore(context, isolatedFonts, injectedStore, recordsRule.recordsFor(injectedStore))
       assertEquals(ContentBlockingConfig(), store.getContentBlocking())
 
       listOf(
@@ -65,7 +67,7 @@ class ContentBlockingStoreTest {
           )
           .awaitAll()
 
-      val reopened = LibraryStore(context, isolatedFonts, injectedStore)
+      val reopened = LibraryStore(context, isolatedFonts, injectedStore, recordsRule.recordsFor(injectedStore))
       val saved = reopened.getContentBlocking()
       assertEquals(setOf("alpha", "beta", "123"), saved.rules.map { it.value }.toSet())
       assertTrue(saved.rules.any { it.kind == ContentBlockKind.AUTHOR && it.label == "手工ID备注" })

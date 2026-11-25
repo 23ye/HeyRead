@@ -22,6 +22,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import cn.heyread.app.data.account.AccountRepository
 import cn.heyread.app.data.local.LibraryStore
+import cn.heyread.app.data.local.RecordsTestRule
 import cn.heyread.app.data.model.ArticleBlock
 import cn.heyread.app.data.model.Source
 import cn.heyread.app.data.model.Story
@@ -58,6 +59,7 @@ class DetailScreenGuestPagerTest {
   @get:Rule val compose = createAndroidComposeRule<androidx.activity.ComponentActivity>()
 
   @get:Rule val temporaryFolder = TemporaryFolder()
+  @get:Rule val recordsRule = RecordsTestRule()
 
   private var testViewModelStore: ViewModelStore? = null
   private var testDataStoreScope: CoroutineScope? = null
@@ -174,7 +176,13 @@ class DetailScreenGuestPagerTest {
 
         override fun getCacheDir(): File = File(isolatedRoot, "cache").apply { mkdirs() }
       }
-    val store = LibraryStore(testContext, File(isolatedRoot, "reading-fonts"), preferences)
+    val store =
+        LibraryStore(
+            testContext,
+            File(isolatedRoot, "reading-fonts"),
+            preferences,
+            recordsRule.recordsFor(preferences),
+        )
     val appViewModel = AppViewModel(store)
     val owner = ViewModelStore()
     testViewModelStore = owner

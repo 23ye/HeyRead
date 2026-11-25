@@ -3,6 +3,8 @@ package cn.heyread.app.viewmodel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import dagger.hilt.android.lifecycle.HiltViewModel
+import javax.inject.Inject
 import cn.heyread.app.data.model.Source
 import cn.heyread.app.data.translation.MlKitSteamTranslationServiceFactory
 import cn.heyread.app.data.translation.SteamTranslationService
@@ -42,8 +44,9 @@ data class SteamTranslationState(
                 phase == SteamTranslationPhase.TRANSLATING
 }
 
-class SteamTranslationViewModel(
-    private val serviceFactory: SteamTranslationServiceFactory = MlKitSteamTranslationServiceFactory
+@HiltViewModel
+class SteamTranslationViewModel @Inject constructor(
+    private val serviceFactory: SteamTranslationServiceFactory
 ) : ViewModel() {
     private val mutableState = MutableStateFlow(SteamTranslationState())
     val state = mutableState.asStateFlow()
@@ -53,6 +56,8 @@ class SteamTranslationViewModel(
     private var requestGeneration = 0L
     private var translationJob: Job? = null
     private var activeService: SteamTranslationService? = null
+
+    constructor() : this(MlKitSteamTranslationServiceFactory)
 
     fun bind(source: Source, storyKey: String, body: String, isActive: Boolean) {
         if (!isActive) {

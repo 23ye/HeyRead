@@ -23,7 +23,9 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.lifecycle.ViewModelStore
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import cn.heyread.app.HiltTestActivity
 import cn.heyread.app.data.local.LibraryStore
+import cn.heyread.app.data.local.RecordsTestRule
 import cn.heyread.app.data.model.Source
 import cn.heyread.app.viewmodel.AppViewModel
 import cn.heyread.app.viewmodel.FeedTab
@@ -43,9 +45,10 @@ import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class PhoneDetailEmptyTransitionTest {
-    @get:Rule val compose = createAndroidComposeRule<androidx.activity.ComponentActivity>()
+    @get:Rule val compose = createAndroidComposeRule<HiltTestActivity>()
 
     @get:Rule val temporaryFolder = TemporaryFolder()
+    @get:Rule val recordsRule = RecordsTestRule()
 
     private var testViewModelStore: ViewModelStore? = null
     private var testDataStoreScope: CoroutineScope? = null
@@ -164,6 +167,7 @@ class PhoneDetailEmptyTransitionTest {
                 instrumentationContext,
                 File(isolatedRoot, "reading-fonts"),
                 injectedPreferencesStore,
+                recordsRule.recordsFor(injectedPreferencesStore),
             )
         runBlocking {
             store.setMotionEnabled(true)

@@ -32,6 +32,7 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class ReadingPreferencesPersistenceTest {
     @get:Rule val temporaryFolder = TemporaryFolder()
+    @get:Rule val recordsRule = RecordsTestRule()
     private var viewModelStore: ViewModelStore? = null
     private var preferencesScope: CoroutineScope? = null
 
@@ -49,7 +50,7 @@ class ReadingPreferencesPersistenceTest {
             val context = InstrumentationRegistry.getInstrumentation().targetContext
             val preferencesStore = createPreferencesStore()
             val fontsDirectory = temporaryFolder.newFolder("reading-fonts")
-            val store = LibraryStore(context, fontsDirectory, preferencesStore)
+            val store = LibraryStore(context, fontsDirectory, preferencesStore, recordsRule.recordsFor(preferencesStore))
             val owner = ViewModelStore()
             viewModelStore = owner
             lateinit var viewModel: AppViewModel
@@ -79,7 +80,7 @@ class ReadingPreferencesPersistenceTest {
                 }
                 assertEquals(selected, viewModel.state.value.readingPreferences)
                 awaitStored(store, selected, viewModel, "selected reading preferences persist")
-                val reopened = LibraryStore(context, fontsDirectory, preferencesStore)
+                val reopened = LibraryStore(context, fontsDirectory, preferencesStore, recordsRule.recordsFor(preferencesStore))
 
                 assertEquals(selected, reopened.getReadingPreferences())
                 assertEquals(beforeTheme, reopened.getTheme())
@@ -98,7 +99,7 @@ class ReadingPreferencesPersistenceTest {
             }
             assertEquals(
                 beforeReading,
-                LibraryStore(context, fontsDirectory, preferencesStore).getReadingPreferences(),
+                LibraryStore(context, fontsDirectory, preferencesStore, recordsRule.recordsFor(preferencesStore)).getReadingPreferences(),
             )
         }
 

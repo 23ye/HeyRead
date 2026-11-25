@@ -19,7 +19,9 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModelStore
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import cn.heyread.app.HiltTestActivity
 import cn.heyread.app.data.local.LibraryStore
+import cn.heyread.app.data.local.RecordsTestRule
 import cn.heyread.app.data.model.HomeLayout
 import cn.heyread.app.data.model.Source
 import cn.heyread.app.viewmodel.AppViewModel
@@ -33,7 +35,8 @@ import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class TabletParallelNavigationTest {
-    @get:Rule val compose = createAndroidComposeRule<androidx.activity.ComponentActivity>()
+    @get:Rule val compose = createAndroidComposeRule<HiltTestActivity>()
+    @get:Rule val recordsRule = RecordsTestRule()
 
     private var testViewModelStore: ViewModelStore? = null
 
@@ -154,7 +157,10 @@ class TabletParallelNavigationTest {
             InstrumentationRegistry.getInstrumentation().targetContext.applicationContext
         val owner = ViewModelStore()
         testViewModelStore = owner
-        val viewModel = AppViewModel(LibraryStore(instrumentationContext))
+        val viewModel =
+            AppViewModel(
+                LibraryStore(instrumentationContext, recordsRule.preferences, recordsRule.records)
+            )
         owner.put("tablet-parallel-navigation", viewModel)
         viewModel.selectSource(FeedTab.DISCOVER, Source.DEMO)
         compose.waitUntil(10_000) {

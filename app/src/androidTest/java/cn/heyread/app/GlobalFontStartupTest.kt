@@ -20,6 +20,7 @@ import androidx.lifecycle.ViewModelStore
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import cn.heyread.app.data.local.LibraryStore
+import cn.heyread.app.data.local.RecordsTestRule
 import cn.heyread.app.data.model.ReadingFont
 import cn.heyread.app.ui.components.toComposeFontFamily
 import cn.heyread.app.ui.theme.HeyReadTheme
@@ -57,6 +58,7 @@ import org.junit.runner.RunWith
 class GlobalFontStartupTest {
   @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
   @get:Rule val temporaryFolder = TemporaryFolder()
+  @get:Rule val recordsRule = RecordsTestRule()
 
   private var storeScope: CoroutineScope? = null
   private var viewModelStore: ViewModelStore? = null
@@ -160,7 +162,13 @@ class GlobalFontStartupTest {
     delay(150)
     assertEquals("system", viewModel.state.value.theme)
     assertEquals(ReadingFont.SYSTEM, viewModel.state.value.readingPreferences.font)
-    val persisted = LibraryStore(InstrumentationRegistry.getInstrumentation().targetContext, fontsDirectory, base)
+    val persisted =
+      LibraryStore(
+        InstrumentationRegistry.getInstrumentation().targetContext,
+        fontsDirectory,
+        base,
+        recordsRule.recordsFor(base),
+      )
       .getStartupAppearance()
     assertEquals("dark", persisted.theme)
     assertEquals(ReadingFont.CUSTOM, persisted.readingPreferences.font)
@@ -197,7 +205,15 @@ class GlobalFontStartupTest {
     viewModelStore = owner
     lateinit var viewModel: AppViewModel
     instrumentation.runOnMainSync {
-      viewModel = AppViewModel(LibraryStore(instrumentation.targetContext, fontsDirectory, dataStore))
+      viewModel =
+        AppViewModel(
+          LibraryStore(
+            instrumentation.targetContext,
+            fontsDirectory,
+            dataStore,
+            recordsRule.recordsFor(dataStore),
+          )
+        )
       owner.put("global-font-startup", viewModel)
     }
     return viewModel

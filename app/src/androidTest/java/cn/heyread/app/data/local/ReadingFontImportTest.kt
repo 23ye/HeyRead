@@ -55,6 +55,7 @@ class ReadingFontImportTest {
     @get:Rule val compose = createAndroidComposeRule<androidx.activity.ComponentActivity>()
 
     @get:Rule val temporaryFolder = TemporaryFolder()
+    @get:Rule val recordsRule = RecordsTestRule()
 
     private var viewModelStore: ViewModelStore? = null
     private var preferencesScope: CoroutineScope? = null
@@ -75,7 +76,7 @@ class ReadingFontImportTest {
             val fixtureContext = targetContext
             val fontsDirectory = temporaryFolder.newFolder("private-fonts")
             val preferencesStore = createPreferencesStore("font-import-preferences")
-            val store = LibraryStore(fixtureContext, fontsDirectory, preferencesStore)
+            val store = LibraryStore(fixtureContext, fontsDirectory, preferencesStore, recordsRule.recordsFor(preferencesStore))
             val owner = ViewModelStore()
             viewModelStore = owner
             lateinit var viewModel: AppViewModel
@@ -134,18 +135,18 @@ class ReadingFontImportTest {
             assertTrue("a private hash-named copy is installed", installed.isFile)
             assertEquals(
                 imported,
-                LibraryStore(fixtureContext, fontsDirectory, preferencesStore)
+                LibraryStore(fixtureContext, fontsDirectory, preferencesStore, recordsRule.recordsFor(preferencesStore))
                     .getImportedReadingFonts()
                     .single(),
             )
             assertEquals(
                 selectedFirst,
-                LibraryStore(fixtureContext, fontsDirectory, preferencesStore)
+                LibraryStore(fixtureContext, fontsDirectory, preferencesStore, recordsRule.recordsFor(preferencesStore))
                     .getReadingPreferences(),
             )
             val reopenedOwner = ViewModelStore()
             lateinit var reopenedViewModel: AppViewModel
-            val reopenedStore = LibraryStore(fixtureContext, fontsDirectory, preferencesStore)
+            val reopenedStore = LibraryStore(fixtureContext, fontsDirectory, preferencesStore, recordsRule.recordsFor(preferencesStore))
             InstrumentationRegistry.getInstrumentation().runOnMainSync {
                 reopenedViewModel = AppViewModel(reopenedStore)
                 reopenedOwner.put("reading-font-reopen-test", reopenedViewModel)
@@ -239,13 +240,13 @@ class ReadingFontImportTest {
             }
             assertFalse(secondInstalled.exists())
             assertTrue(
-                LibraryStore(fixtureContext, fontsDirectory, preferencesStore)
+                LibraryStore(fixtureContext, fontsDirectory, preferencesStore, recordsRule.recordsFor(preferencesStore))
                     .getImportedReadingFonts()
                     .isEmpty()
             )
             assertEquals(
                 afterRemoval,
-                LibraryStore(fixtureContext, fontsDirectory, preferencesStore)
+                LibraryStore(fixtureContext, fontsDirectory, preferencesStore, recordsRule.recordsFor(preferencesStore))
                     .getReadingPreferences(),
             )
             assertEquals(
@@ -264,7 +265,7 @@ class ReadingFontImportTest {
         viewModelStore = owner
         lateinit var viewModel: AppViewModel
         InstrumentationRegistry.getInstrumentation().runOnMainSync {
-            viewModel = AppViewModel(LibraryStore(fixtureContext, fontsDirectory, preferencesStore))
+            viewModel = AppViewModel(LibraryStore(fixtureContext, fontsDirectory, preferencesStore, recordsRule.recordsFor(preferencesStore)))
             owner.put("reading-font-cancel-test", viewModel)
             viewModel.selectSource(FeedTab.DISCOVER, Source.DEMO)
             viewModel.importReadingFont(fontUri("slow.ttf"))
@@ -298,7 +299,7 @@ class ReadingFontImportTest {
         runBlocking {
             awaitState(
                 viewModel,
-                LibraryStore(fixtureContext, fontsDirectory, preferencesStore),
+                LibraryStore(fixtureContext, fontsDirectory, preferencesStore, recordsRule.recordsFor(preferencesStore)),
                 "cancelled import settles",
             ) {
                 !it.fontBusy

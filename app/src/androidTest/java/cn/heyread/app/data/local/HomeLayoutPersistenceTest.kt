@@ -5,15 +5,17 @@ import androidx.test.platform.app.InstrumentationRegistry
 import cn.heyread.app.data.model.HomeLayout
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
+import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class HomeLayoutPersistenceTest {
+    @get:Rule val recordsRule = RecordsTestRule()
     @Test
     fun homeLayoutPersistsIndependentlyOfOtherPreferencesAndHistories() = runBlocking {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
-        val store = LibraryStore(context)
+        val store = LibraryStore(context, recordsRule.preferences, recordsRule.records)
         val beforeLayout = store.getHomeLayout()
         val beforeTheme = store.getTheme()
         val beforeAccent = store.getThemeAccent()
@@ -24,7 +26,7 @@ class HomeLayoutPersistenceTest {
         val beforeReading = store.history()
         try {
             store.setHomeLayout(HomeLayout.C)
-            val reopened = LibraryStore(context)
+            val reopened = LibraryStore(context, recordsRule.preferences, recordsRule.records)
 
             assertEquals(HomeLayout.C, reopened.getHomeLayout())
             assertEquals(beforeTheme, reopened.getTheme())
@@ -42,13 +44,16 @@ class HomeLayoutPersistenceTest {
     @Test
     fun storedLayoutAReopensAndDoesNotOverwriteHistories() = runBlocking {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
-        val store = LibraryStore(context)
+        val store = LibraryStore(context, recordsRule.preferences, recordsRule.records)
         val beforeLayout = store.getHomeLayout()
         val beforeSearch = store.searchHistory()
         val beforeReading = store.history()
         try {
             store.setHomeLayout(HomeLayout.A)
-            assertEquals(HomeLayout.A, LibraryStore(context).getHomeLayout())
+            assertEquals(
+                HomeLayout.A,
+                LibraryStore(context, recordsRule.preferences, recordsRule.records).getHomeLayout(),
+            )
             assertEquals(beforeSearch, store.searchHistory())
             assertEquals(beforeReading, store.history())
         } finally {

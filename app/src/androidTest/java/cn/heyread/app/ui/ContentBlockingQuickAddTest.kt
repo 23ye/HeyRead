@@ -30,6 +30,7 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.datastore.preferences.core.Preferences
 import cn.heyread.app.data.local.LibraryStore
+import cn.heyread.app.data.local.RecordsTestRule
 import cn.heyread.app.data.model.ArticleLabel
 import cn.heyread.app.data.model.ContentBlockKind
 import cn.heyread.app.data.model.ContentBlockTarget
@@ -77,6 +78,7 @@ import org.junit.runner.RunWith
 class ContentBlockingQuickAddTest {
   @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
   @get:Rule val temporaryFolder = TemporaryFolder()
+  @get:Rule val recordsRule = RecordsTestRule()
 
   private var fixture: Fixture? = null
 
@@ -373,7 +375,7 @@ class ContentBlockingQuickAddTest {
         File(isolatedRoot, "content-blocking.preferences_pb")
       }
     val fontsDirectory = File(isolatedRoot, "reading-fonts").apply { mkdirs() }
-    val store = LibraryStore(context, fontsDirectory, dataStore)
+    val store = LibraryStore(context, fontsDirectory, dataStore, recordsRule.recordsFor(dataStore))
     val owner = ViewModelStore()
     lateinit var appViewModel: AppViewModel
     compose.activityRule.scenario.onActivity {

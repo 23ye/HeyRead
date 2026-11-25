@@ -3,6 +3,8 @@ package cn.heyread.app.viewmodel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import dagger.hilt.android.lifecycle.HiltViewModel
+import javax.inject.Inject
 import cn.heyread.app.data.model.Story
 import cn.heyread.app.data.remote.CaptchaCallbackResult
 import cn.heyread.app.data.remote.CaptchaChallenge
@@ -67,7 +69,8 @@ private data class PendingCaptchaOperation(
     val inFlight: Boolean = false,
 )
 
-class DestinationViewModel(private val repository: DestinationLoader = DestinationRepository()) :
+@HiltViewModel
+class DestinationViewModel @Inject constructor(private val repository: DestinationLoader) :
     ViewModel() {
     private val mutableState = MutableStateFlow(DestinationUiState())
     val state = mutableState.asStateFlow()
@@ -79,6 +82,8 @@ class DestinationViewModel(private val repository: DestinationLoader = Destinati
     private var pendingCaptcha: PendingCaptchaOperation? = null
     private var nextCaptchaId = 0L
     private var nextCaptchaAttemptId = 0L
+
+    constructor() : this(DestinationRepository())
 
     fun show(target: DestinationTarget) {
         if (

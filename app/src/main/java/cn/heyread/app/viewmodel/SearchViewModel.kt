@@ -3,6 +3,8 @@ package cn.heyread.app.viewmodel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import androidx.lifecycle.SavedStateHandle
+import dagger.hilt.android.lifecycle.HiltViewModel
 import cn.heyread.app.data.local.SearchHistoryEntry
 import cn.heyread.app.data.local.SearchHistoryStore
 import cn.heyread.app.data.model.SearchScope
@@ -17,9 +19,11 @@ import cn.heyread.app.data.remote.OnlineSearchLoader
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import javax.inject.Inject
 
 data class SearchUiState(
     val scope: SearchScope = SearchScope.GLOBAL,
@@ -54,12 +58,23 @@ private data class PendingSearch(
     val proofInFlight: Boolean = false,
 )
 
-class SearchViewModel(
+@HiltViewModel
+class SearchViewModel @Inject constructor(
+    savedStateHandle: SavedStateHandle,
     private val loader: OnlineSearchLoader,
     private val historyStore: SearchHistoryStore,
-    initialScope: SearchScope = SearchScope.GLOBAL,
-    initialQuery: String = "",
 ) : ViewModel() {
+    private val initialScope =
+        runCatching {
+          val type = SearchScopeType.valueOf(savedStateHandle.get<String>(ARG_SCOPE_TYPE).orEmpty())
+          if (type == SearchScopeType.GLOBAL) SearchScope.GLOBAL
+          else SearchScope(
+              type,
+              savedStateHandle.get<String>(ARG_SCOPE_ID).orEmpty(),
+              savedStateHandle.get<String>(ARG_SCOPE_NAME).orEmpty(),
+          )
+        }.getOrDefault(SearchScope.GLOBAL)
+    private val initialQuery = savedStateHandle.get<String>(ARG_QUERY).orEmpty()
     private val mutableState =
         MutableStateFlow(SearchUiState(scope = initialScope, query = initialQuery.take(120)))
     val state = mutableState.asStateFlow()
@@ -75,11 +90,31 @@ class SearchViewModel(
     private var retryInitial = true
     private var retryRefresh = false
     private var historyGeneration = 0L
+    private var historyObservationGeneration = 0L
+    private var historyObservationJob: Job? = null
     private val historyMutex = Mutex()
     private var accountRevision: Long? = null
 
+    constructor(
+        loader: OnlineSearchLoader,
+        historyStore: SearchHistoryStore,
+        initialScope: SearchScope = SearchScope.GLOBAL,
+        initialQuery: String = "",
+    ) : this(
+        SavedStateHandle(
+            mapOf(
+                ARG_SCOPE_TYPE to initialScope.type.name,
+                ARG_SCOPE_ID to initialScope.id,
+                ARG_SCOPE_NAME to initialScope.name,
+                ARG_QUERY to initialQuery,
+            )
+        ),
+        loader,
+        historyStore,
+    )
+
     init {
-        viewModelScope.launch { refreshHistory() }
+        refreshHistory()
         if (initialQuery.isNotBlank()) submit(initialQuery)
     }
 
@@ -407,15 +442,17 @@ class SearchViewModel(
     }
 
     fun refreshHistory() {
-        val token = ++historyGeneration
-        viewModelScope.launch {
+        val token = ++historyObservationGeneration
+        historyObservationJob?.cancel()
+        historyObservationJob = viewModelScope.launch {
             try {
-                val entries = historyMutex.withLock { historyStore.searchHistory() }
-                if (token == historyGeneration)
-                    mutableState.value = mutableState.value.copy(history = entries)
+                historyStore.observeSearchHistory().collect { entries ->
+                    if (token == historyObservationGeneration)
+                        mutableState.value = mutableState.value.copy(history = entries)
+                }
             } catch (error: Exception) {
                 if (error is kotlinx.coroutines.CancellationException) throw error
-                if (token == historyGeneration)
+                if (token == historyObservationGeneration)
                     mutableState.value = mutableState.value.copy(notice = "本机搜索记录读取失败。")
             }
         }
@@ -434,13 +471,10 @@ class SearchViewModel(
         val token = ++historyGeneration
         viewModelScope.launch {
             try {
-                val entries =
-                    historyMutex.withLock {
-                        if (token == historyGeneration) historyStore.removeSearch(entry)
-                        historyStore.searchHistory()
-                    }
-                if (token == historyGeneration)
-                    mutableState.value = mutableState.value.copy(history = entries)
+                historyMutex.withLock {
+                    if (token == historyGeneration) historyStore.removeSearch(entry)
+                }
+                if (token == historyGeneration) refreshHistory()
             } catch (error: Exception) {
                 if (error is kotlinx.coroutines.CancellationException) throw error
                 mutableState.value = mutableState.value.copy(notice = "删除本机搜索记录失败。")
@@ -452,13 +486,10 @@ class SearchViewModel(
         val token = ++historyGeneration
         viewModelScope.launch {
             try {
-                val entries =
-                    historyMutex.withLock {
-                        if (token == historyGeneration) historyStore.clearSearchHistory()
-                        historyStore.searchHistory()
-                    }
-                if (token == historyGeneration)
-                    mutableState.value = mutableState.value.copy(history = entries)
+                historyMutex.withLock {
+                    if (token == historyGeneration) historyStore.clearSearchHistory()
+                }
+                if (token == historyGeneration) refreshHistory()
             } catch (error: Exception) {
                 if (error is kotlinx.coroutines.CancellationException) throw error
                 mutableState.value = mutableState.value.copy(notice = "清空本机搜索记录失败。")
@@ -480,5 +511,12 @@ class SearchViewModel(
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T =
             SearchViewModel(loader, history, scope, initialQuery) as T
+    }
+
+    companion object {
+      const val ARG_SCOPE_TYPE = "scopeType"
+      const val ARG_SCOPE_ID = "scopeId"
+      const val ARG_SCOPE_NAME = "scopeName"
+      const val ARG_QUERY = "query"
     }
 }
